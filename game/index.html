@@ -3,156 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NEON COAST: UNDERWORLD — an open-world crime game</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b1026'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%2300e5ff'%3EN%3C/text%3E%3C/svg%3E">
+<title>Block Dodger</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1026; font-family: 'Segoe UI', system-ui, sans-serif; color: #eef2ff; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
   #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  /* Read aloud, never shown: the status line screen readers announce. */
   #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(5,8,20,0.72); z-index: 40; }
-  .panel { background: #12182e; border: 1px solid #2a3a6b; border-radius: 12px; padding: 28px 32px; max-width: 560px; width: 90%; box-shadow: 0 12px 48px rgba(0,0,0,0.6); }
-  .panel h1 { margin: 0 0 6px; font-size: 34px; letter-spacing: 1px; color: #00e5ff; }
-  .panel h2 { margin: 0 0 10px; font-size: 22px; color: #ffd166; }
-  .panel p { line-height: 1.5; color: #c8d2f0; }
-  button { background: #00e5ff; color: #06121f; border: 0; border-radius: 8px; padding: 10px 18px; font-size: 15px; font-weight: 700; cursor: pointer; margin: 4px 4px 4px 0; }
-  button:hover { background: #7df9ff; }
-  button:disabled { background: #3a4a6b; color: #8a97b8; cursor: default; }
-  button.ghost { background: transparent; color: #c8d2f0; border: 1px solid #3a4a6b; }
-  /* HUD */
-  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; display: none; font-size: 14px; }
-  .hud-box { position: absolute; background: rgba(8,12,24,0.72); border: 1px solid rgba(90,110,160,0.5); border-radius: 8px; padding: 8px 12px; }
-  body.dialogue-open .hud-top { display: none; } /* dialogue cards hide top HUD boxes */
-  #hud-tl { top: 12px; left: 12px; }
-  #hud-tr { top: 12px; right: 12px; text-align: right; }
-  #hud-bl { bottom: 12px; left: 12px; }
-  #objective { top: 12px; left: 50%; transform: translateX(-50%); max-width: 44%; text-align: center; color: #ffd166; font-weight: 600; }
-  .bar { width: 170px; height: 10px; background: #222a44; border-radius: 5px; overflow: hidden; margin: 3px 0 6px; }
-  .bar > div { height: 100%; }
-  #health-fill { background: #2ed68a; width: 100%; }
-  #armor-fill { background: #4a7dd6; width: 0%; }
-  #wanted { color: #ffd166; font-size: 20px; letter-spacing: 2px; }
-  #cash { font-size: 20px; font-weight: 800; color: #7dff6a; }
-  #minimap { position: absolute; right: 12px; bottom: 12px; border: 2px solid rgba(120,140,190,0.7); border-radius: 8px; background: rgba(8,12,24,0.85); }
-  #prompt { position: absolute; bottom: 90px; left: 50%; transform: translateX(-50%); background: rgba(8,12,24,0.85); border: 1px solid #00e5ff; color: #7df9ff; padding: 8px 16px; border-radius: 8px; font-weight: 700; }
-  #prompt:empty { display: none; }
-  #toast { position: absolute; bottom: 210px; left: 50%; transform: translateX(-50%); color: #ffd166; font-weight: 600; text-shadow: 0 1px 4px #000; }
-  #speed { position: absolute; bottom: 205px; right: 16px; font-size: 22px; font-weight: 800; }
-  #weapon { position: absolute; bottom: 238px; right: 16px; color: #c8d2f0; }
-  #crosshair { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); color: rgba(255,255,255,0.8); font-size: 22px; display: none; }
-  #dialogue-screen { z-index: 50; align-items: flex-end; background: transparent; pointer-events: none; }
-  #dialogue-screen .panel { pointer-events: auto; width: min(680px, 92%); background: rgba(10,14,30,0.94); border-top: 3px solid #00e5ff; margin-bottom: 8vh; }
-  .shop-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid #22305a; }
-  #mission-select button { display: block; width: 100%; text-align: left; margin: 4px 0; }
-  #map-canvas { border: 2px solid #3a4a6b; border-radius: 8px; }
-  kbd { background: #22305a; border-radius: 4px; padding: 1px 6px; }
 </style>
-<script type="importmap">
-{ "imports": { "three": "./vendor/three.module.min.js" } }
-</script>
 </head>
 <body>
-<canvas id="game" aria-label="NEON COAST UNDERWORLD: open-world crime game"></canvas>
+<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
 <p id="status" role="status" aria-live="polite"></p>
-
-<div id="hud">
-  <div class="hud-box hud-top" id="hud-tl">
-    <div>HEALTH</div><div class="bar"><div id="health-fill"></div></div>
-    <div>ARMOR</div><div class="bar"><div id="armor-fill"></div></div>
-    <div id="wanted">☆☆☆☆☆</div>
-  </div>
-  <div class="hud-box hud-top" id="hud-tr">
-    <div id="cash">$250</div>
-    <div id="district">The Undertow</div>
-    <div><span id="shards">◆ 0/20</span> · <span id="time">🌙 Night</span></div>
-  </div>
-  <div class="hud-box hud-top" id="objective">M1 First Run: Steal the GT coupe</div>
-  <div class="hud-box hud-top" id="hud-bl">WASD move · Shift sprint · Space jump · E interact · 1-4 weapons · M map · Esc pause</div>
-  <canvas id="minimap" width="180" height="180"></canvas>
-  <div id="prompt"></div>
-  <div id="toast"></div>
-  <div id="speed"></div>
-  <div id="weapon"></div>
-  <div id="crosshair">+</div>
-</div>
-
-<div class="overlay" id="title-screen" style="display:flex">
-  <div class="panel">
-    <h1>NEON COAST</h1>
-    <h2>UNDERWORLD</h2>
-    <p>Neon Coast after dark. You are <b>Raka Surya</b>, getaway driver in debt to the fixer <b>Vera Kade</b>. Steal cars, run missions, dodge the heat — and decide who owns this city: Vera, or Det. Ilves.</p>
-    <p>9 districts · 36 pedestrians · 12 traffic cars · 6 vehicle kinds · 5-star wanted · 8 story missions · 20 neon shards · day/night + rain.</p>
-    <button id="btn-new">New Game</button>
-    <button id="btn-continue" class="ghost">Continue</button>
-    <button id="btn-how" class="ghost">How to Play</button>
-    <div id="how-screen" style="display:none">
-      <p><kbd>WASD</kbd> move/drive · <kbd>Shift</kbd> sprint · <kbd>Space</kbd> jump · <kbd>E</kbd> enter car / interact / store · <kbd>Mouse</kbd> drag camera · <kbd>Click</kbd> fire · <kbd>1</kbd>–<kbd>4</kbd> weapons · <kbd>M</kbd> map · <kbd>Esc</kbd> pause · <kbd>F</kbd> mute</p>
-    </div>
-    <h3 style="color:#ffd166;margin:14px 0 6px">Mission Select</h3>
-    <div id="mission-select"></div>
-  </div>
-</div>
-
-<div class="overlay" id="pause-screen">
-  <div class="panel">
-    <h2>Paused</h2>
-    <button id="btn-resume">Resume</button>
-    <button id="btn-save">Save Game</button>
-    <button id="btn-mute" class="ghost">Mute (F)</button>
-    <button id="btn-quit" class="ghost">Save &amp; Title</button>
-  </div>
-</div>
-
-<div class="overlay" id="map-screen">
-  <div class="panel" style="max-width:700px">
-    <h2>Neon Coast — Full Map</h2>
-    <canvas id="map-canvas" width="640" height="640"></canvas>
-    <p>Gold marker: current objective · Cyan diamonds: neon shards · Red: traffic · Blue: police</p>
-    <button id="map-close">Close (M)</button>
-  </div>
-</div>
-
-<div class="overlay" id="shop-screen">
-  <div class="panel">
-    <h2 id="shop-title">Shop</h2>
-    <div id="shop-list"></div>
-    <p id="shop-msg"></p>
-    <button id="shop-close">Leave Shop</button>
-  </div>
-</div>
-
-<div class="overlay" id="dialogue-screen">
-  <div class="panel">
-    <h2 id="dialogue-who">Vera Kade</h2>
-    <p id="dialogue-text"></p>
-    <button id="dialogue-next">Continue</button>
-  </div>
-</div>
-
-<div class="overlay" id="choice-screen">
-  <div class="panel">
-    <h2 id="choice-title">The Choice</h2>
-    <p id="choice-text"></p>
-    <button id="choice-a">Option A</button>
-    <button id="choice-b" class="ghost">Option B</button>
-  </div>
-</div>
-
-<div class="overlay" id="complete-screen">
-  <div class="panel">
-    <h2 id="complete-title">Mission Complete</h2>
-    <p id="complete-text"></p>
-    <button id="complete-next">Continue</button>
-  </div>
-</div>
-
-<div class="overlay" id="over-screen">
-  <div class="panel">
-    <h2 id="over-title">WASTED</h2>
-    <p id="over-text"></p>
-    <button id="over-continue">Continue</button>
-  </div>
-</div>
-
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

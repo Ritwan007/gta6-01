@@ -3,16 +3,110 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Block Dodger</title>
-<style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* Read aloud, never shown: the status line screen readers announce. */
-  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-</style>
+<title>SUNSET HEIST: CALDERA BAY — an open-world crime game</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23ff7a1a'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='%231a0e00' font-family='sans-serif' font-weight='bold'%3ES%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="./style.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
 </head>
 <body>
-<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
+<div id="app">
+  <canvas id="game" aria-label="SUNSET HEIST: CALDERA BAY — explore the city on foot and by car"></canvas>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div id="hud-top-left">
+      <div id="health-row"><span class="hud-label">HEALTH</span><div id="health-bar"><div id="health-fill"></div></div></div>
+      <div id="cash-row"><span class="hud-label">CASH</span><span id="cash">$250</span></div>
+      <div id="shard-row"><span class="hud-label">SUN COINS</span><span id="shards">0 / 12</span></div>
+    </div>
+    <div id="hud-top-right">
+      <div id="stars" aria-label="wanted level"></div>
+      <div id="heat-label">HEAT</div>
+    </div>
+    <div id="objective-banner"><span id="objective-text"></span></div>
+    <div id="feed"></div>
+    <div id="hud-bottom-left">
+      <div id="weapon-name">Fists</div>
+      <div id="ammo">—</div>
+      <div id="speed-row"><span id="speed">0</span><span class="hud-label"> KM/H</span></div>
+    </div>
+    <div id="hud-bottom-right"><canvas id="minimap" width="220" height="220"></canvas></div>
+    <div id="interact-prompt" class="hidden"></div>
+    <div id="crosshair" class="hidden">+</div>
+    <div id="mission-card" class="hidden">
+      <div id="mission-card-title"></div>
+      <div id="mission-card-body"></div>
+      <button id="mission-card-btn">CONTINUE</button>
+    </div>
+    <div id="toast" class="hidden"></div>
+  </div>
+
+  <!-- Full-city map overlay -->
+  <div id="map-overlay" class="hidden">
+    <div id="map-panel">
+      <div id="map-title">CALDERA BAY — CITY MAP <span id="map-hint">M / Esc to close</span></div>
+      <canvas id="bigmap" width="720" height="720"></canvas>
+      <div id="map-legend">◆ objective &nbsp; ● you &nbsp; ★ police &nbsp; $ shop &nbsp; G garage &nbsp; H hideout &nbsp; ○ sun coin</div>
+    </div>
+  </div>
+
+  <!-- Pause menu -->
+  <div id="pause-menu" class="hidden overlay-menu">
+    <div class="menu-panel">
+      <h1>PAUSED</h1>
+      <p class="menu-sub">Caldera Bay waits for no one. Well — except now.</p>
+      <button id="btn-resume">RESUME</button>
+      <button id="btn-save">SAVE GAME</button>
+      <button id="btn-restart-mission">RESTART MISSION</button>
+      <button id="btn-quit-title">QUIT TO TITLE</button>
+    </div>
+  </div>
+
+  <!-- WASTED / BUSTED -->
+  <div id="gameover" class="hidden overlay-menu">
+    <div class="menu-panel">
+      <h1 id="gameover-title">WASTED</h1>
+      <p id="gameover-body"></p>
+      <button id="btn-respawn">RESPAWN</button>
+      <button id="btn-go-title">QUIT TO TITLE</button>
+    </div>
+  </div>
+
+  <!-- Title screen -->
+  <div id="title-screen">
+    <div id="title-inner">
+      <div id="title-kicker">MAKE.FUN GTA 6 BOUNTY — AN OPEN-WORLD CRIME GAME</div>
+      <h1 id="title-main">SUNSET HEIST</h1>
+      <h2 id="title-sub">CALDERA BAY</h2>
+      <p id="title-story">Milo Voss owes Viktor Hale for a delivery that never arrived. Ivy Sorren
+      is giving him work, job by job, to pay it off — before Hale comes for the garage itself.</p>
+      <div id="title-buttons">
+        <button id="btn-new-game">NEW GAME</button>
+        <button id="btn-continue">CONTINUE</button>
+        <button id="btn-howto">HOW TO PLAY</button>
+      </div>
+      <div id="title-howto" class="hidden">
+        <p><b>WASD</b> move / drive &nbsp;·&nbsp; <b>Shift</b> sprint &nbsp;·&nbsp; <b>Space</b> jump / handbrake</p>
+        <p><b>E</b> enter car · steal · interact &nbsp;·&nbsp; <b>Mouse drag</b> look &nbsp;·&nbsp; <b>Click</b> fire</p>
+        <p><b>1–4</b> weapons &nbsp;·&nbsp; <b>R</b> reload &nbsp;·&nbsp; <b>M</b> map &nbsp;·&nbsp; <b>Esc</b> pause</p>
+        <p>Steal cars, run jobs for Ivy, rob SunMart, lose the heat, don't get wasted or busted.</p>
+      </div>
+      <div id="title-foot">A complete open world: 5 districts, traffic, pedestrians, 5-star heat,
+      6 story missions, 4 weapons, 6 vehicles, shops, garage, save &amp; continue. All original — no Rockstar content.</div>
+      <div id="title-credit">Built for the make.fun gta6-01 bounty · https://make.fun/bounty/gta6-01</div>
+    </div>
+  </div>
+
+  <div id="ending-card" class="hidden overlay-menu">
+    <div class="menu-panel">
+      <h1>THE DOCK KING FALLS</h1>
+      <p id="ending-body"></p>
+      <button id="btn-ending-continue">KEEP PLAYING — FREE ROAM</button>
+    </div>
+  </div>
+</div>
 <p id="status" role="status" aria-live="polite"></p>
 <script type="module" src="./src/main.js"></script>
 </body>

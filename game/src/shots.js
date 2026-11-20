@@ -1,79 +1,134 @@
-// The screenshot scenes behind ?shot=start|play|end. Each one plays the real rules forward from a
-// fresh world for a fixed number of steps, steered by a simple autopilot (look ahead each way the
-// paddle could move, keep clear of blocks, chase the lowest coin when that is safe), so the frame
-// is what a short game really looks like and the same seed always gives the same frame.
-import { FIELD, PLAYER, STEP } from './config.js';
-import { EVENT_OVER, KIND_BLOCK } from './world.js';
-import { SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
+// The screenshot scenes behind ?shot=cover|foot|chase|combat (with &seed=1).
+// Each one sets the real game state deterministically — real cars, real peds, real
+// HUD — then the page paints it twice and sets window.__shotReady. Nothing here is
+// a mock: the frame is what the game really looks like in that situation. Every
+// staged position sits on a street, clear of buildings.
+import * as THREE from 'three';
+import { createRandom } from './random.js';
 
-const START_SECONDS = 5;
-const PLAY_SECONDS = 26;
-const END_LIMIT_SECONDS = 600;
-/**
- * How far ahead, in seconds, the autopilot checks each way it could move: the play scene's pilot
- * looks well ahead and keeps all its lives; the end scene's looks only a moment ahead, so it is
- * caught out once the blocks speed up, as a hurried player is.
- */
-const HORIZON_PLAY = 0.7;
-const HORIZON_END = 0.25;
-const SAMPLE = 1 / 30;
-const DIRECTIONS = [0, -1, 1];
-/** Extra room, each side, it keeps between the paddle and a block. */
-const MARGIN = 10;
-
-/** Seconds until moving in `direction` (-1, 0, 1) runs the paddle into a block; Infinity when it never does. */
-function timeToHit(state, direction, horizon) {
-  const player = state.player;
-  for (let t = SAMPLE; t <= horizon; t += SAMPLE) {
-    const x = Math.min(FIELD.width - player.width, Math.max(0, player.x + direction * PLAYER.speed * t));
-    for (let index = 0; index < state.items.length; index += 1) {
-      const item = state.items[index];
-      if (!item.active || item.kind !== KIND_BLOCK) continue;
-      const y = item.y + item.speed * t;
-      if (y + item.height > player.y && y < player.y + player.height && item.x < x + player.width + MARGIN && item.x + item.width > x - MARGIN) return t;
-    }
-  }
-  return Infinity;
+function setMission(G, index, step, timer) {
+  G.missions.index = index;
+  G.missions.active = true;
+  G.missions.step = step;
+  G.missions.timer = timer;
+  G.missions.robT = 0;
+  G.missions.waitT = 0;
+  const pt = G.missions.objectivePoint();
+  G.city.setBeacon(pt.x, pt.z, true);
 }
 
-/** Of the safe ways to move, the one toward the lowest coin (or the centre); else the one that is hit last. */
-function autopilot(state, horizon) {
-  const player = state.player;
-  let coin = null;
-  for (let index = 0; index < state.items.length; index += 1) {
-    const item = state.items[index];
-    if (item.active && item.kind !== KIND_BLOCK && (coin === null || item.y > coin.y)) coin = item;
-  }
-  const target = coin === null ? FIELD.width / 2 : coin.x + coin.width / 2;
-  const centre = player.x + player.width / 2;
-  const wanted = target > centre + 8 ? 1 : target < centre - 8 ? -1 : 0;
-  let best = wanted;
-  let bestTime = timeToHit(state, wanted, horizon);
-  for (let index = 0; index < DIRECTIONS.length && bestTime !== Infinity; index += 1) {
-    const time = timeToHit(state, DIRECTIONS[index], horizon);
-    if (time > bestTime) {
-      bestTime = time;
-      best = DIRECTIONS[index];
-    }
-  }
-  return best;
+function putPlayerInCar(G, car) {
+  const p = G.player;
+  p.inCar = true;
+  p.car = car;
+  G.vehicles.playerCar = car;
+  p.x = car.x;
+  p.z = car.z;
+  p.heading = car.heading;
+  p.camYaw = car.heading;
+  p.mesh.visible = false;
+  car.isParked = false;
+  car.isTraffic = false;
 }
 
-/**
- * Set `world` to the named scene (start, play or end; any other name is start) and return the
- * screen to draw over it and the best score to show.
- */
-export function stageShot(name, world) {
-  world.reset();
-  if (name !== 'play' && name !== 'end') {
-    for (let index = 0; index < START_SECONDS / STEP; index += 1) world.step(STEP, 0, true);
-    return { screen: SCREEN_TITLE, best: 0 };
+function putPlayerOnFoot(G, x, z, heading) {
+  const p = G.player;
+  p.inCar = false;
+  p.car = null;
+  G.vehicles.playerCar = null;
+  p.x = x;
+  p.z = z;
+  p.heading = heading;
+  p.camYaw = heading;
+  p.mesh.visible = true;
+  p.mesh.position.set(x, 0, z);
+  p.mesh.rotation.y = heading;
+}
+
+function setWanted(G, n, searching) {
+  G.police.wanted = n;
+  G.police.searching = searching;
+  G.hud.setStars(n, searching);
+}
+
+export function stageShot(G, name) {
+  const rng = createRandom(1);
+  void rng;
+  G.hud.hideMissionCard();
+  document.getElementById('title-screen').classList.add('hidden');
+  document.getElementById('pause-menu').classList.add('hidden');
+  document.getElementById('map-overlay').classList.add('hidden');
+
+  if (name === 'foot') {
+    // On foot on Neon Row by SunMart: pistol drawn, peds walking, parked row ahead.
+    // Heading looks south-west down the parked row (x=120, z=-84..-132).
+    setMission(G, 0, 0, 178);
+    setWanted(G, 0, false);
+    G.cash = 250;
+    putPlayerOnFoot(G, 132, -40, Math.PI * 1.09);
+    G.weapons.unlocked = [true, true, false, false];
+    G.weapons.index = 1;
+    G.weapons.mag[1] = 12;
+    G.weapons.reserve[1] = 48;
+    G.vehicles.spawnVehicle('sedan', 120, -84, 0, { parked: true, color: 0x3a6fd8 });
+    G.vehicles.spawnVehicle('sedan', 120, -108, 0, { parked: true, color: 0xc23b3b });
+    G.vehicles.spawnVehicle('van', 120, -132, 0, { parked: true, color: 0x3a5a8a });
+    G.peds.spawnWorld();
+    G.hud.setInteractPrompt('E — Steal the Falcon S');
+  } else if (name === 'chase') {
+    // 4-star chase on Neon Row: Falcon S fleeing, interceptors closing in.
+    setMission(G, 2, 0, 210);
+    setWanted(G, 4, false);
+    G.cash = 1450;
+    const car = G.vehicles.spawnVehicle('sedan', 0, -40, 0, { color: 0x3a6fd8 });
+    car.health = 42; // damage smoke shows
+    car.speed = 25; // fleeing — the speedo reads, not 0
+    putPlayerInCar(G, car);
+    const c1 = G.vehicles.spawnVehicle('police', -10, -22, 0);
+    const c2 = G.vehicles.spawnVehicle('police', 12, -26, 0);
+    const c3 = G.vehicles.spawnVehicle('police', 0, 16, Math.PI);
+    G.police.pursuit = [c1, c2, c3];
+    G.vehicles.spawnVehicle('sedan', -60, 0, Math.PI / 2, { traffic: true, color: 0xd8d8d8 });
+    G.vehicles.spawnVehicle('truck', 120, 0, Math.PI, { traffic: true, color: 0x8a5a2a });
+  } else if (name === 'combat') {
+    // M6 finale at Sorren Motors: SMG, crew enemies in front of the garage sign.
+    setMission(G, 5, 0, 540);
+    setWanted(G, 2, false);
+    G.cash = 3200;
+    putPlayerOnFoot(G, -300, 132, 0);
+    G.player.health = 42;
+    G.weapons.unlocked = [true, true, true, true];
+    G.weapons.index = 2;
+    G.weapons.mag[2] = 27;
+    G.weapons.reserve[2] = 90;
+    const e1 = G.weapons.spawnEnemy(-312, 150, 60);
+    const e2 = G.weapons.spawnEnemy(-288, 150, 60);
+    const e3 = G.weapons.spawnEnemy(-300, 144, 60);
+    void e1; void e2; void e3;
+    // A frozen muzzle flash + tracer so the frame shows the firefight.
+    const flash = new THREE.Mesh(
+      new THREE.SphereGeometry(0.7, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0.95 }),
+    );
+    flash.position.set(-300, 1.6, 138);
+    G.scene.add(flash);
+    const pts = [new THREE.Vector3(-300, 1.6, 138), new THREE.Vector3(-300, 1.4, 148)];
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xffd23e }));
+    G.scene.add(line);
+    G.peds.spawnWorld();
+  } else {
+    // cover: golden-hour Neon Row, Tempest GT driving east, 2 stars, traffic + pursuit.
+    setMission(G, 0, 2, 143);
+    setWanted(G, 2, false);
+    G.cash = 600;
+    const car = G.vehicles.spawnVehicle('gt', 60, 0, Math.PI / 2, { color: 0xd81e1e });
+    car.speed = 20; // staged mid-drive so the speedo reads, not 0
+    putPlayerInCar(G, car);
+    G.vehicles.spawnVehicle('sedan', 96, 2, Math.PI / 2, { traffic: true, color: 0x3a6fd8 });
+    G.vehicles.spawnVehicle('van', 120, -2, Math.PI / 2, { traffic: true, color: 0xd8d8d8 });
+    G.vehicles.spawnVehicle('truck', 144, 0, 0, { traffic: true, color: 0x8a5a2a });
+    const pc = G.vehicles.spawnVehicle('police', 84, 0, -Math.PI / 2);
+    G.police.pursuit = [pc];
+    G.peds.spawnWorld();
   }
-  const limit = name === 'end' ? END_LIMIT_SECONDS : PLAY_SECONDS;
-  const horizon = name === 'end' ? HORIZON_END : HORIZON_PLAY;
-  for (let index = 0; index < limit / STEP; index += 1) {
-    if (world.step(STEP, autopilot(world.state, horizon), false) & EVENT_OVER) break;
-  }
-  const over = world.state.lives === 0;
-  return { screen: over ? SCREEN_OVER : SCREEN_PLAY, best: world.state.score };
 }

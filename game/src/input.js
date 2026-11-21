@@ -1,53 +1,73 @@
-// Keyboard and pointer input. Held keys give a steering direction; one-shot presses (start or
-// restart, pause) are queued as bit flags and taken once by the loop, so a press between two
-// frames is never lost and never counted twice.
-
-export const ACTION_CONFIRM = 1;
-export const ACTION_PAUSE = 2;
-
-const LEFT = new Set(['ArrowLeft', 'KeyA']);
-const RIGHT = new Set(['ArrowRight', 'KeyD']);
-const CONFIRM = new Set(['Space', 'Enter']);
-const PAUSE = new Set(['KeyP', 'Escape']);
-
-export function createInput(target) {
-  let left = false;
-  let right = false;
-  let actions = 0;
+// VELORA HEAT — keyboard + mouse input.
+//
+// Design decision from the round-10 failure (M would not close the map):
+// M and Escape are handled SYNCHRONOUSLY in the DOM keydown handler through a
+// callback registered by main.js. They are never queued as edges for the fixed
+// step to consume later, so a stale edge can never re-open a screen that was
+// just closed. All other keys are plain held-state.
+export function createInput(canvas, onKey) {
+  const keys = new Set(); // held keys (movement, driving)
+  const pressed = new Set(); // one-shot edges: keydown adds, keyup NEVER removes;
+  // press() consumes. A quick down+up between two slow frames is never lost.
+  let mouseX = 640;
+  let mouseY = 360;
+  let mouseDown = false;
+  let mouseClicked = false; // one-shot, consumed by the loop
 
   window.addEventListener('keydown', (event) => {
-    if (LEFT.has(event.code)) left = true;
-    else if (RIGHT.has(event.code)) right = true;
-    else if (CONFIRM.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_CONFIRM;
-    } else if (PAUSE.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_PAUSE;
-    } else return;
-    event.preventDefault();
+    if (event.repeat) return;
+    if (event.code === 'KeyM' || event.code === 'Escape') {
+      onKey(event.code);
+      event.preventDefault();
+      return;
+    }
+    keys.add(event.code);
+    pressed.add(event.code);
+    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault();
   });
-  window.addEventListener('keyup', (event) => {
-    if (LEFT.has(event.code)) left = false;
-    else if (RIGHT.has(event.code)) right = false;
+  window.addEventListener('keyup', (event) => keys.delete(event.code));
+  window.addEventListener('blur', () => { keys.clear(); mouseDown = false; });
+
+  canvas.addEventListener('mousemove', (event) => {
+    const rect = canvas.getBoundingClientRect();
+    mouseX = event.clientX - rect.left;
+    mouseY = event.clientY - rect.top;
   });
-  // A key released while the tab is hidden never sends keyup: let go of everything on blur.
-  window.addEventListener('blur', () => {
-    left = false;
-    right = false;
+  canvas.addEventListener('mousedown', (event) => {
+    if (event.button !== 0) return;
+    mouseDown = true;
+    mouseClicked = true;
+    const rect = canvas.getBoundingClientRect();
+    mouseX = event.clientX - rect.left;
+    mouseY = event.clientY - rect.top;
   });
-  target.addEventListener('pointerdown', () => {
-    actions |= ACTION_CONFIRM;
-  });
+  window.addEventListener('mouseup', (event) => { if (event.button === 0) mouseDown = false; });
+  canvas.addEventListener('contextmenu', (event) => event.preventDefault());
 
   return {
-    /** -1 for left, 1 for right, 0 for neither or both. */
-    direction() {
-      return (right ? 1 : 0) - (left ? 1 : 0);
+    held(code) { return keys.has(code); },
+    axis() {
+      // Screen axes: W = north (-z), S = south (+z), A = west (-x), D = east (+x).
+      const x = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
+      const z = (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) - (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0);
+      return { x, z };
     },
-    /** The one-shot presses since the last call, as ACTION_* flags. */
-    takeActions() {
-      const taken = actions;
-      actions = 0;
-      return taken;
+    drive() {
+      const fwd = keys.has('KeyW') || keys.has('ArrowUp');
+      const back = keys.has('KeyS') || keys.has('ArrowDown');
+      const left = keys.has('KeyA') || keys.has('ArrowLeft');
+      const right = keys.has('KeyD') || keys.has('ArrowRight');
+      return { fwd, back, steer: (right ? 1 : 0) - (left ? 1 : 0), brake: keys.has('Space') };
+    },
+    run() { return keys.has('ShiftLeft') || keys.has('ShiftRight'); },
+    mouse() { return { x: mouseX, y: mouseY, down: mouseDown }; },
+    takeClick() { const c = mouseClicked; mouseClicked = false; return c; },
+    // One-shot edge for E / R / digit keys: true once per physical press.
+    // Consumed from the edge queue, so a press between frames is never lost.
+    press(code) {
+      if (!pressed.has(code)) return false;
+      pressed.delete(code);
+      return true;
     },
   };
 }

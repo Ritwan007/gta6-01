@@ -1,16 +1,20 @@
-// A working gta6-01 entry (Node 22, standard library only): the game is this directory's
-// game/ folder, plain static files a desktop browser loads offline (game/index.html and its ES
-// modules, no library and no network request), and the program hands it in. It copies game/ and
-// screenshots/ from beside this file to /output and writes /output/dossier.json, the summary the
-// judge reads, with the vendored make.fun library. Only the plumbing, not an open world: Block
-// Dodger, a plain 2D canvas game where a paddle dodges falling blocks and catches coins, with a
-// title screen, score, lives and levels, game over and restart, flat colours and no sound. Build
-// your own open-world crime game in its place (three.js or any library you vendor under game/),
-// put your 3 or 4 PNG or JPEG screenshots in screenshots/ (the first by name is the cover) and run it.
+// VELORA HEAT — gta6-01 entry (Node 22, standard library only): the game is this
+// directory's game/ folder, plain static files a desktop browser loads offline
+// (game/index.html and its ES modules, no library and no network request), and the
+// program hands it in. It copies game/ and screenshots/ from beside this file to
+// /output and writes /output/dossier.json, the summary the judge reads, with the
+// vendored make.fun library. VELORA HEAT is a top-down 2D open-world crime game
+// in Velora Bay: Reno Karsa works jobs for Sari Lestari across a 6-mission story
+// chain (steal the Falco GT, deliver cargo, escape a 3-star manhunt, rob
+// PelangiMart, win a 12-checkpoint street race, defend the garage), with traffic
+// AI, pedestrians, a 1-5 star wanted system with VBPD pursuit, 4 weapons,
+// garage car storage, localStorage saves, synth WebAudio and a live minimap.
 //
 // Serve it locally with `node serve.ts`, then open http://localhost:8080.
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+// Determinism: the copy is a plain tree copy and buildDossier is deterministic,
+// so running this file twice over the same tree writes byte-identical output.
 
 import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';

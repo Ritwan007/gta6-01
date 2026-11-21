@@ -226,9 +226,9 @@ function updatePoliceCar(G, c, dt) {
   const pc = playerCar(G);
   const tx = pc ? pc.x : p.x, tz = pc ? pc.z : p.z;
   if (dist(c.x, c.z, tx, tz) < 3.4 && c.ramT <= 0 && Math.abs(c.speed) > 8) {
-    c.ramT = 0.8;
+    c.ramT = 1.2;
     c.speed *= 0.35; // bounce off after the hit
-    if (pc) { pc.hp -= 6; pc.speed *= 0.5; }
+    if (pc) { pc.hp -= 4; pc.speed *= 0.5; }
     else { p.hp -= 5; }
     G.shake = Math.max(G.shake, 0.5);
     G.audio.crash();

@@ -37,6 +37,9 @@ export function createMission(G) {
     G.audio.stingGood();
   }
   function setupRace() {
+    // The race runs clean: VBPD stands down for the event, so the challenge
+    // is the two AI racers, not a 3-minute pursuit ramming the lent GT apart.
+    G.police.clearWanted('race');
     // Sari lends you a GT: put the player in one at the start line.
     const p = G.player;
     if (p.inCar == null || playerCar(G).kind !== 'gt') {

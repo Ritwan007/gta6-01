@@ -56,7 +56,7 @@ export const COINS = [
 
 export const VEHICLES = {
   sedan:  { name: 'Lumba Sedan',    top: 26, accel: 15, brake: 26, grip: 3.2, hp: 100, len: 4.4, wid: 2.0, colors: ['#c94f3d', '#3d7ac9', '#c9a13d', '#7a7a7a'] },
-  gt:     { name: 'Falco GT',       top: 34, accel: 19, brake: 30, grip: 2.6, hp: 80,  len: 4.2, wid: 1.9, colors: ['#e01e2b', '#ffb020', '#1ec8e0'] },
+  gt:     { name: 'Falco GT',       top: 34, accel: 19, brake: 30, grip: 2.6, hp: 120, len: 4.2, wid: 1.9, colors: ['#e01e2b', '#ffb020', '#1ec8e0'] },
   truck:  { name: 'Banteng Hauler', top: 22, accel: 11, brake: 22, grip: 3.6, hp: 170, len: 5.6, wid: 2.3, colors: ['#5a7a3d', '#8a5a2b'] },
   van:    { name: 'Aruna Van',      top: 23, accel: 12, brake: 22, grip: 3.4, hp: 140, len: 5.0, wid: 2.2, colors: ['#e8e4da', '#3d5a7a'] },
   bike:   { name: 'Lebah 125',      top: 32, accel: 21, brake: 30, grip: 3.0, hp: 50,  len: 2.4, wid: 0.9, colors: ['#f5d020', '#20c8a0'] },

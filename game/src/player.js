@@ -7,7 +7,7 @@
 //   5. garage + wanted + unseen -> spray garage ($300, clears heat)
 //   6. shop nearby -> open the shop (or start a hold-up at PelangiMart)
 //   7. garage + next mission waiting -> start the next mission
-import { POINTS, GARAGE_SLOTS, SPRAY_COST, SHOPS, WEAPONS } from './config.js';
+import { POINTS, GARAGE_SLOTS, SPRAY_COST, SHOPS, WEAPONS, VEHICLES } from './config.js';
 import { dist, clamp } from './random.js';
 import { nearestCar, nearestStorableCar, enterCar, exitCar, playerCar } from './vehicles.js';
 
@@ -115,13 +115,15 @@ export function storeCar(G, car) {
   for (let i = 0; i < GARAGE_SLOTS.length; i++) if (!used.has(i)) { idx = i; break; }
   if (idx < 0) { G.hud.toast('Garage is full (4 cars).'); return; }
   // Park it at the slot (visible in the world) AND record it as owned, so the
-  // full record respawns it exactly after a reload (r10 F1 fix).
+  // full record respawns it exactly after a reload (r10 F1 fix). The garage
+  // service also repairs it to full — a stored car starts its next job fresh.
   const slot = GARAGE_SLOTS[idx];
   car.x = slot.x; car.z = slot.z; car.angle = 0; car.speed = 0;
   car.driver = 'none'; car.parked = true;
+  car.hp = VEHICLES[car.kind].hp;
   G.owned.push({ carId: car.id, kind: car.kind, color: car.color, hp: car.hp, slot: idx, name: car.name });
   G.audio.chaChing();
-  G.hud.toast(`Stored the ${car.name} in your garage.`);
+  G.hud.toast(`Stored the ${car.name} in your garage (repaired).`);
   G.hud.feed(`Bimo: "Nice. ${car.name} is safe in the garage now."`, 'good');
   if (G.mission.onStoreCar) G.mission.onStoreCar(G, car);
 }

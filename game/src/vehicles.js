@@ -176,14 +176,19 @@ function updatePlayerCar(G, c, dt) {
 function updateTraffic(G, c, dt) {
   const v = VEHICLES[c.kind];
   const ai = c.ai;
-  // Stop for a car ahead on the same street.
-  let blocked = false;
+  // Stop for a car ahead on the same street — but OVERTAKE a parked car
+  // instead of waiting behind it forever (a parked car never moves, so a
+  // waiter would camp on it and block the player from stealing it).
+  let blocked = false, parkedAhead = null;
   for (const o of G.cars) {
     if (o === c || o.driver === 'player') continue;
     const dx = o.x - c.x, dz = o.z - c.z;
     const ahead = dx * Math.cos(c.angle) + dz * Math.sin(c.angle);
     const side = Math.abs(-dx * Math.sin(c.angle) + dz * Math.cos(c.angle));
-    if (ahead > 0 && ahead < 9 && side < 2.6) { blocked = true; break; }
+    if (ahead > 0 && ahead < 9 && side < 2.6) {
+      if (o.parked) parkedAhead = o;
+      else { blocked = true; break; }
+    }
   }
   if (blocked) { c.speed = approach(c.speed, 0, 14 * dt); return; }
   const d = dist(c.x, c.z, ai.tx, ai.tz);
@@ -193,9 +198,20 @@ function updateTraffic(G, c, dt) {
     const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([a, b]) => si + a >= 0 && si + a <= 7 && sj + b >= 0 && sj + b <= 7);
     const [a, b] = pick(G.rng, dirs);
     ai.tx = street(si + a); ai.tz = street(sj + b);
+    ai.ox = 0;
     return;
   }
-  driveToward(G, c, ai.tx, ai.tz, dt, 0.42, 0.8);
+  // Overtake: steer around the parked car on the far side (6 m lateral —
+  // the street is 18 m wide, so the car stays on the road).
+  let tx = ai.tx, tz = ai.tz;
+  if (parkedAhead) {
+    const dx = parkedAhead.x - c.x, dz = parkedAhead.z - c.z;
+    const side = -dx * Math.sin(c.angle) + dz * Math.cos(c.angle);
+    if (ai.ox == null || ai.ox === 0) ai.ox = (side >= 0 ? -1 : 1) * 6;
+    tx += -Math.sin(c.angle) * ai.ox;
+    tz += Math.cos(c.angle) * ai.ox;
+  } else ai.ox = 0;
+  driveToward(G, c, tx, tz, dt, 0.42, 0.8);
 }
 
 function updatePoliceCar(G, c, dt) {

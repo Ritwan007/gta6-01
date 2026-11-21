@@ -163,7 +163,7 @@ export function updateEnemies(G, dt) {
 }
 
 export function spawnEnemy(G, x, z, weapon = 'pistol') {
-  const e = { kind: 'enemy', x, z, angle: 0, hp: 50, weapon, shootT: 0.8 + G.rng(), state: 'fight', deadT: 0 };
+  const e = { kind: 'enemy', x, z, angle: 0, hp: 45, weapon, shootT: 0.8 + G.rng(), state: 'fight', deadT: 0 };
   G.enemies.push(e);
   return e;
 }

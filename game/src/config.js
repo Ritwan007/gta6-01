@@ -130,7 +130,7 @@ export const MISSIONS = [
     id: 'M6', title: 'Pier King', reward: 5000, unlock: -3,
     intro: "Damar Wibowo comes for the garage. Defend Lestari Motors from 3 waves of his crew, then run for the marina as the city watches.",
     steps: [
-      { t: 'defend', x: -220, z: -44, r: 26, waves: [2, 3, 4], text: "Defend Lestari Motors — waves of Damar's crew" },
+      { t: 'defend', x: -220, z: -44, r: 26, waves: [2, 2, 3], text: "Defend Lestari Motors — waves of Damar's crew" },
       { t: 'getaway', x: 308, z: 308, r: 14, text: 'Getaway to the marina' },
     ],
     timer: 0, complete: 'The Pier King falls. The debt is paid — in full.',

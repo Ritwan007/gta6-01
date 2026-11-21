@@ -3,62 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sunset Heist: Caldera Bay</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23ff7a2a'/></svg>">
-<link rel="stylesheet" href="./style.css">
-<script type="importmap">
-{"imports": {"three": "./vendor/three.module.min.js"}}
-</script>
+<title>Block Dodger</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  /* Read aloud, never shown: the status line screen readers announce. */
+  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+</style>
 </head>
 <body>
-<canvas id="game" aria-label="Sunset Heist Caldera Bay: an open-world crime game. Steal cars, run missions, outrun the Caldera Bay police."></canvas>
-<div id="hud" hidden>
-  <div id="topleft">
-    <div id="healthbar"><div id="healthfill"></div><span id="healthtext">100</span></div>
-    <div id="cash">$250</div>
-    <div id="stars" aria-label="wanted level"></div>
-    <div id="weapon">Fists</div>
-  </div>
-  <div id="objective" hidden></div>
-  <div id="feed"></div>
-  <div id="speedo" hidden>0 KM/H</div>
-  <canvas id="minimap" width="180" height="180"></canvas>
-  <div id="prompt" hidden></div>
-  <div id="wantedlabel" hidden></div>
-</div>
-<div id="mapwrap" hidden>
-  <div id="maptitle">CALDERA BAY — full city map &nbsp;·&nbsp; M / Esc to close</div>
-  <canvas id="bigmap" width="640" height="640"></canvas>
-</div>
-<div id="title" class="screen">
-  <h1>SUNSET HEIST</h1>
-  <h2>CALDERA BAY</h2>
-  <p class="tag">Milo Voss owes the Dock King. Ivy Sorren has six jobs that pay it off.</p>
-  <div class="menu">
-    <button id="btn-new">New Game</button>
-    <button id="btn-continue">Continue</button>
-    <button id="btn-how">How to Play</button>
-  </div>
-  <p class="foot">An original open-world crime game · Caldera Bay PD is watching · make.fun gta6-01</p>
-  <div id="how" hidden>
-    <p><b>WASD</b> move / drive · <b>Mouse</b> drag to look, click to shoot · <b>E</b> enter / steal car, start mission, store car · <b>Shift</b> sprint · <b>Space</b> jump · <b>R</b> reload · <b>1–4</b> weapons · <b>M</b> map · <b>Esc</b> pause</p>
-    <p>Steal cars, run the six jobs for Ivy Sorren, and lose the heat at a hideout or the spray garage. Getting seen committing a crime raises your wanted level.</p>
-  </div>
-</div>
-<div id="pause" class="screen" hidden>
-  <h1>PAUSED</h1>
-  <div class="menu">
-    <button id="btn-resume">Resume</button>
-    <button id="btn-save">Save Game</button>
-    <button id="btn-restart-mission">Restart Mission</button>
-    <button id="btn-quit">Quit to Title</button>
-  </div>
-</div>
-<div id="card" class="screen" hidden>
-  <h1 id="card-title"></h1>
-  <p id="card-body"></p>
-  <div class="menu"><button id="btn-card">Continue</button></div>
-</div>
+<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
 <p id="status" role="status" aria-live="polite"></p>
 <script type="module" src="./src/main.js"></script>
 </body>

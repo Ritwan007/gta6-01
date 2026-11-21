@@ -149,12 +149,12 @@ export function updateEnemies(G, dt) {
     } else if (e.shootT <= 0 && !G.city.segHitsBuilding(e.x, e.z, tx, tz)) {
       e.shootT = e.weapon === 'smg' ? 0.55 : 0.95;
       e.angle = Math.atan2(tz - e.z, tx - e.x);
-      const hitChance = e.weapon === 'smg' ? 0.22 : 0.3;
+      const hitChance = e.weapon === 'smg' ? 0.20 : 0.26;
       G.tracers.push({ x1: e.x, z1: e.z, x2: tx + (G.rng() - 0.5) * 3, z2: tz + (G.rng() - 0.5) * 3, t: 0.09, enemy: true });
       G.audio.shot('enemy');
       if (G.rng() < hitChance) {
         if (pc) { pc.hp -= e.weapon === 'smg' ? 4 : 8; G.shake = Math.max(G.shake, 0.3); }
-        else { p.hp -= e.weapon === 'smg' ? 6 : 11; G.shake = Math.max(G.shake, 0.3); }
+        else { p.hp -= e.weapon === 'smg' ? 6 : 9; G.shake = Math.max(G.shake, 0.3); }
       }
     }
   }
@@ -163,7 +163,7 @@ export function updateEnemies(G, dt) {
 }
 
 export function spawnEnemy(G, x, z, weapon = 'pistol') {
-  const e = { kind: 'enemy', x, z, angle: 0, hp: 60, weapon, shootT: 0.8 + G.rng(), state: 'fight', deadT: 0 };
+  const e = { kind: 'enemy', x, z, angle: 0, hp: 50, weapon, shootT: 0.8 + G.rng(), state: 'fight', deadT: 0 };
   G.enemies.push(e);
   return e;
 }

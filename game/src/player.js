@@ -47,9 +47,15 @@ export function tryInteract(G) {
   // 1. Exit the car (always first — spray never eats the exit press).
   if (p.inCar != null) { exitCar(G); G.hud.toast('You step out.'); return; }
   const dGarage = dist(p.x, p.z, POINTS.garage.x, POINTS.garage.z);
-  // 2/3. Enter / steal a car.
+  // 2/3. Enter / steal a car — except at the garage a FRESH car is stored, not
+  // re-entered (the r11 lesson: E after exiting re-entered the same car).
+  // A car already owned (parked at its slot) is entered, not stored again.
   const car = nearestCar(G, p.x, p.z, 5);
-  if (car) { stealOrEnter(G, car); return; }
+  // A fresh car at the garage is stored, not re-entered — except a police car
+  // or a mission-target car, which can never be stored (they are entered).
+  const storeFirst = car && dGarage < 14 && car.kind !== 'police' && !car.target &&
+    !G.owned.some((o) => o.carId === car.id);
+  if (car && !storeFirst) { stealOrEnter(G, car); return; }
   // 4. Store a car in the garage.
   if (dGarage < 14) {
     const storable = nearestStorableCar(G, p.x, p.z, 8);

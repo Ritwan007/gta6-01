@@ -204,14 +204,16 @@ function collectCoins() {
 function updatePrompt() {
   const p = G.player;
   if (p.inCar != null) { G.hud.setPrompt('<b>E</b> — Exit car'); return; }
+  const dGarage = dist(p.x, p.z, POINTS.garage.x, POINTS.garage.z);
   const car = nearestCar(G, p.x, p.z, 5);
   if (car) {
+    const freshAtGarage = dGarage < 14 && !G.owned.some((o) => o.carId === car.id);
+    if (freshAtGarage && car.kind !== 'police' && !car.target) { G.hud.setPrompt(`<b>E</b> — Store the ${car.name} in your garage`); return; }
     const tag = car.target ? ' ★' : '';
     const verb = car.parked || car.driver === 'traffic' ? 'Steal' : 'Enter';
     G.hud.setPrompt(`<b>E</b> — ${verb} the ${car.name}${tag}`);
     return;
   }
-  const dGarage = dist(p.x, p.z, POINTS.garage.x, POINTS.garage.z);
   if (dGarage < 14) {
     const storable = nearestStorableCar(G, p.x, p.z, 8);
     if (storable) { G.hud.setPrompt(`<b>E</b> — Store the ${storable.name} in your garage`); return; }

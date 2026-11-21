@@ -67,7 +67,7 @@ export const TRAFFIC_MIX = ['sedan', 'sedan', 'sedan', 'sedan', 'sedan', 'sedan'
 export const WEAPONS = [
   { key: '1', name: 'Fists',       short: 'Fists',      dmg: 25, rate: 0.45, mag: Infinity, reload: 0,   range: 2.4, spread: 0,    pellets: 1, auto: false, sound: 'thud' },
   { key: '2', name: 'Lestari 9',   short: 'Lestari 9',  dmg: 22, rate: 0.28, mag: 12, reload: 1.1, range: 60,  spread: 0.02, pellets: 1, auto: false, sound: 'pistol' },
-  { key: '3', name: 'Tawon SMG',   short: 'Tawon SMG',  dmg: 12, rate: 0.10, mag: 30, reload: 1.6, range: 45,  spread: 0.09, pellets: 1, auto: true,  sound: 'smg' },
+  { key: '3', name: 'Tawon SMG',   short: 'Tawon SMG',  dmg: 12, rate: 0.10, mag: 30, reload: 1.6, range: 45,  spread: 0.07, pellets: 1, auto: true,  sound: 'smg' },
   { key: '4', name: 'Guntur 12',   short: 'Guntur 12',  dmg: 8,  rate: 0.9,  mag: 6,  reload: 2.4, range: 28,  spread: 0.16, pellets: 6, auto: false, sound: 'shotgun' },
 ];
 

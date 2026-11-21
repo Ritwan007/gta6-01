@@ -9,18 +9,19 @@ export const SAVE_KEY = 'velora-heat-save-v1';
 export function createSave(G) {
   function snapshot() {
     const p = G.player;
-    // If the player saves while driving, the car becomes owned (parked at a free
-    // slot) so Continue can restore it exactly.
-    let inCar = null;
+    // If the player saves while driving a car that is already garage-owned,
+    // Continue restores them inside that car at its slot (via the id map).
+    // A car NOT in owned is NEVER added to owned here: claiming it silently
+    // broke the garage store (the car counted as "already owned", so E
+    // re-entered it instead of storing it). It is recorded separately as
+    // inCarData and respawned at the saved position on Continue.
+    let inCar = null, inCarData = null;
     const pc = playerCar(G);
     if (pc) {
-      const used = new Set(G.owned.map((o) => o.slot));
-      let slot = -1;
-      for (let i = 0; i < GARAGE_SLOTS.length; i++) if (!used.has(i)) { slot = i; break; }
-      if (slot >= 0 && !G.owned.some((o) => o.carId === pc.id)) {
-        G.owned.push({ carId: pc.id, kind: pc.kind, color: pc.color, hp: pc.hp, slot, name: pc.name });
-      }
       inCar = pc.id;
+      if (!G.owned.some((o) => o.carId === pc.id)) {
+        inCarData = { kind: pc.kind, color: pc.color, hp: pc.hp, name: pc.name };
+      }
     }
     return {
       v: 1, cash: p.cash, hp: p.hp, weapon: p.weapon,
@@ -28,7 +29,7 @@ export function createSave(G) {
       missionIndex: G.mission.index, completed: G.mission.completed.slice(),
       owned: G.owned.map((o) => ({ ...o })),
       coins: [...G.coinsTaken],
-      px: p.x, pz: p.z, angle: p.angle, inCar,
+      px: pc ? pc.x : p.x, pz: pc ? pc.z : p.z, angle: p.angle, inCar, inCarData,
       flags: { robUnlocked: !!G.flags.robUnlocked },
     };
   }
@@ -67,7 +68,15 @@ export function createSave(G) {
       G.cars.push(c);
     }
     p.x = data.px; p.z = data.pz; p.angle = data.angle;
-    if (data.inCar != null) {
+    if (data.inCarData) {
+      // A car the player was driving (not garage-owned) respawns at the saved
+      // position; the player stays inside it.
+      const c = makeCar(data.inCarData.kind, data.px, data.pz, data.angle, { color: data.inCarData.color });
+      c.hp = data.inCarData.hp;
+      G.cars.push(c);
+      p.inCar = c.id; c.driver = 'player'; c.parked = false;
+      p.x = c.x; p.z = c.z;
+    } else if (data.inCar != null) {
       const newId = idMap.get(data.inCar);
       const c = newId != null ? G.cars.find((cc) => cc.id === newId) : null;
       if (c) {

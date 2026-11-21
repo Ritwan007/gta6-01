@@ -1,6 +1,6 @@
 // VELORA HEAT — the 6-mission story chain: cards, steps, timers, race, waves,
 // rewards and unlocks. Steps are data in config.js; this file interprets them.
-import { MISSIONS, POINTS, RACE_CPS, WEAPONS } from './config.js';
+import { MISSIONS, POINTS, RACE_CPS, WEAPONS, GARAGE_SLOTS } from './config.js';
 import { dist } from './random.js';
 import { makeCar, playerCar } from './vehicles.js';
 import { spawnEnemy } from './weapons.js';
@@ -79,10 +79,16 @@ export function createMission(G) {
     }
     if (d.unlock === -1) G.flags.robUnlocked = true;
     if (d.unlock === -2) {
-      // A Falco GT now waits at the garage (parked at slot 2, owned + visible).
-      const gt = makeCar('gt', -208, -44, 0, { parked: true, color: '#ffb020' });
-      G.cars.push(gt);
-      G.owned.push({ carId: gt.id, kind: 'gt', color: '#ffb020', hp: gt.hp, slot: 2, name: 'Falco GT' });
+      // A Falco GT now waits at the garage (first FREE slot, owned + visible).
+      const used = new Set(G.owned.map((o) => o.slot));
+      let idx = 0;
+      while (idx < GARAGE_SLOTS.length && used.has(idx)) idx++;
+      if (idx < GARAGE_SLOTS.length) {
+        const slot = GARAGE_SLOTS[idx];
+        const gt = makeCar('gt', slot.x, slot.z, 0, { parked: true, color: '#ffb020' });
+        G.cars.push(gt);
+        G.owned.push({ carId: gt.id, kind: 'gt', color: '#ffb020', hp: gt.hp, slot: idx, name: 'Falco GT' });
+      }
     }
     if (d.unlock === -3) { /* ending handled below */ }
     M.completed[M.index] = true;

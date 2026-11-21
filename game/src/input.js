@@ -1,53 +1,76 @@
-// Keyboard and pointer input. Held keys give a steering direction; one-shot presses (start or
-// restart, pause) are queued as bit flags and taken once by the loop, so a press between two
-// frames is never lost and never counted twice.
+// input.js — keyboard and mouse state for the game loop: held keys by code,
+// edge-triggered presses (for E to enter a car, M for the map, P to pause),
+// and drag-to-orbit mouse deltas with wheel zoom. The loop polls; nothing
+// here knows what any key means.
 
-export const ACTION_CONFIRM = 1;
-export const ACTION_PAUSE = 2;
+export class Input {
+  constructor(element) {
+    this.keys = new Set();
+    this.pressed = new Set();
+    this.mouseDX = 0;
+    this.mouseDY = 0;
+    this.wheel = 0;
+    this.dragging = false;
 
-const LEFT = new Set(['ArrowLeft', 'KeyA']);
-const RIGHT = new Set(['ArrowRight', 'KeyD']);
-const CONFIRM = new Set(['Space', 'Enter']);
-const PAUSE = new Set(['KeyP', 'Escape']);
+    window.addEventListener('keydown', (e) => {
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+      if (!e.repeat) this.pressed.add(e.code);
+      this.keys.add(e.code);
+    });
+    window.addEventListener('keyup', (e) => this.keys.delete(e.code));
+    window.addEventListener('blur', () => this.keys.clear());
 
-export function createInput(target) {
-  let left = false;
-  let right = false;
-  let actions = 0;
+    element.addEventListener('mousedown', (e) => {
+      this.dragging = true;
+      this.lastX = e.clientX;
+      this.lastY = e.clientY;
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!this.dragging) return;
+      this.mouseDX += e.clientX - this.lastX;
+      this.mouseDY += e.clientY - this.lastY;
+      this.lastX = e.clientX;
+      this.lastY = e.clientY;
+    });
+    window.addEventListener('mouseup', () => {
+      this.dragging = false;
+    });
+    element.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        this.wheel += Math.sign(e.deltaY);
+      },
+      { passive: false },
+    );
+  }
 
-  window.addEventListener('keydown', (event) => {
-    if (LEFT.has(event.code)) left = true;
-    else if (RIGHT.has(event.code)) right = true;
-    else if (CONFIRM.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_CONFIRM;
-    } else if (PAUSE.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_PAUSE;
-    } else return;
-    event.preventDefault();
-  });
-  window.addEventListener('keyup', (event) => {
-    if (LEFT.has(event.code)) left = false;
-    else if (RIGHT.has(event.code)) right = false;
-  });
-  // A key released while the tab is hidden never sends keyup: let go of everything on blur.
-  window.addEventListener('blur', () => {
-    left = false;
-    right = false;
-  });
-  target.addEventListener('pointerdown', () => {
-    actions |= ACTION_CONFIRM;
-  });
+  down(code) {
+    return this.keys.has(code);
+  }
 
-  return {
-    /** -1 for left, 1 for right, 0 for neither or both. */
-    direction() {
-      return (right ? 1 : 0) - (left ? 1 : 0);
-    },
-    /** The one-shot presses since the last call, as ACTION_* flags. */
-    takeActions() {
-      const taken = actions;
-      actions = 0;
-      return taken;
-    },
-  };
+  /** True once per physical press; the loop clears presses every frame. */
+  wasPressed(code) {
+    return this.pressed.has(code);
+  }
+
+  /** Read and reset the accumulated mouse movement. */
+  takeMouse() {
+    const out = { dx: this.mouseDX, dy: this.mouseDY, wheel: this.wheel };
+    this.mouseDX = 0;
+    this.mouseDY = 0;
+    this.wheel = 0;
+    return out;
+  }
+
+  endFrame() {
+    this.pressed.clear();
+  }
+
+  /** Movement axes from the held keys: x = strafe right, y = forward. */
+  axes() {
+    const x = (this.down('KeyD') || this.down('ArrowRight') ? 1 : 0) - (this.down('KeyA') || this.down('ArrowLeft') ? 1 : 0);
+    const y = (this.down('KeyW') || this.down('ArrowUp') ? 1 : 0) - (this.down('KeyS') || this.down('ArrowDown') ? 1 : 0);
+    return { x, y };
+  }
 }

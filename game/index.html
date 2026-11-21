@@ -3,17 +3,102 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Block Dodger</title>
+<title>Leonida After Dark — an open-world night in Port Meridian</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0714; font-family: "Segoe UI", system-ui, Arial, sans-serif; color: #f2ecff; }
   #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* Read aloud, never shown: the status line screen readers announce. */
   #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  /* ---------- HUD ---------- */
+  #hud { display: none; position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+  #map-wrap { position: absolute; top: 14px; left: 14px; text-align: left; }
+  #minimap { width: 176px; height: 176px; border-radius: 50%; box-shadow: 0 4px 24px rgba(0,0,0,.55); }
+  #cash { margin-top: 8px; font-size: 24px; font-weight: 700; color: #3dff8f; text-shadow: 0 2px 8px rgba(0,0,0,.8); letter-spacing: .5px; }
+  #stars { font-size: 21px; color: #ffd23e; text-shadow: 0 0 10px rgba(255,160,0,.65), 0 2px 6px rgba(0,0,0,.8); letter-spacing: 2px; }
+  #objective-wrap { position: absolute; top: 14px; right: 14px; max-width: 360px; text-align: right; }
+  #objective-box { display: inline-block; background: rgba(10,8,24,.72); border: 1px solid rgba(255,46,136,.55); border-radius: 10px; padding: 9px 13px; font-size: 16.5px; line-height: 1.35; box-shadow: 0 4px 18px rgba(0,0,0,.5); }
+  #objective-dist { color: #ffd23e; font-weight: 700; margin-left: 8px; white-space: nowrap; }
+  #timer { margin-top: 8px; font-size: 26px; font-weight: 800; color: #ffe9a8; text-shadow: 0 2px 8px rgba(0,0,0,.85); display: none; }
+  #card { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); width: min(560px, 72vw); background: rgba(12,8,28,.82); border: 1px solid rgba(0,229,255,.5); border-radius: 12px; padding: 12px 18px 13px; text-align: center; opacity: 0; transition: opacity .5s; box-shadow: 0 8px 30px rgba(0,0,0,.55); }
+  #card-title { font-size: 19px; font-weight: 800; letter-spacing: 1.5px; color: #7ef0ff; text-transform: uppercase; }
+  #card-body { margin-top: 4px; font-size: 15.5px; line-height: 1.45; color: #efe9ff; }
+  #toast { position: absolute; top: 118px; left: 50%; transform: translateX(-50%); background: rgba(10,8,24,.78); border-radius: 999px; padding: 7px 18px; font-size: 15.5px; color: #ffe9a8; opacity: 0; transition: opacity .35s; white-space: nowrap; box-shadow: 0 4px 16px rgba(0,0,0,.5); }
+  #speedo { position: absolute; right: 20px; bottom: 18px; font-size: 30px; font-weight: 800; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,.85); display: none; }
+  #prompt { position: absolute; left: 50%; bottom: 64px; transform: translateX(-50%); font-size: 16.5px; font-weight: 700; color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,.9); letter-spacing: .4px; }
+  #bust-wrap { position: absolute; left: 50%; bottom: 104px; transform: translateX(-50%); width: 300px; display: none; text-align: center; }
+  #bust-label { font-size: 14px; font-weight: 800; letter-spacing: 3px; color: #ff5468; text-shadow: 0 2px 8px rgba(0,0,0,.9); margin-bottom: 5px; }
+  #bust-bar { height: 9px; border-radius: 6px; background: rgba(255,255,255,.18); overflow: hidden; }
+  #bust-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #ff9a3d, #ff2038); }
+
+  /* ---------- Banner (busted / paused / dawn) ---------- */
+  #banner { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(5,3,14,.66); z-index: 8; }
+  #banner-box { text-align: center; max-width: 620px; padding: 30px 38px; background: rgba(12,8,28,.9); border: 1px solid rgba(255,46,136,.6); border-radius: 16px; box-shadow: 0 18px 60px rgba(0,0,0,.7); }
+  #banner-title { font-size: 40px; font-weight: 900; letter-spacing: 4px; color: #ff2e88; text-shadow: 0 0 24px rgba(255,46,136,.6); }
+  #banner-body { margin-top: 10px; font-size: 17px; line-height: 1.55; color: #efe9ff; }
+
+  /* ---------- Title screen ---------- */
+  #title-screen { position: fixed; inset: 0; z-index: 10; display: flex; align-items: flex-end; justify-content: center; background: linear-gradient(180deg, rgba(5,3,14,0) 40%, rgba(5,3,14,.72) 78%, rgba(5,3,14,.94)); }
+  #title-box { text-align: center; padding: 0 20px 42px; max-width: 760px; }
+  #title-kicker { font-size: 14px; letter-spacing: 6px; color: #7ef0ff; text-transform: uppercase; text-shadow: 0 2px 10px rgba(0,0,0,.9); }
+  #title-name { font-size: clamp(44px, 8.5vw, 92px); font-weight: 900; line-height: .98; letter-spacing: 2px; margin: 6px 0 4px; background: linear-gradient(92deg, #ff2e88 5%, #ff9a3d 45%, #ffe9a8 70%, #00e5ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 4px 22px rgba(255,46,136,.45)); }
+  #title-sub { font-size: 16.5px; line-height: 1.5; color: #e9e2ff; text-shadow: 0 2px 8px rgba(0,0,0,.95); margin: 8px auto 18px; max-width: 600px; }
+  .title-btn { pointer-events: auto; cursor: pointer; border: 1px solid rgba(255,255,255,.35); background: rgba(16,10,34,.85); color: #fff; font-size: 18px; font-weight: 800; letter-spacing: 2px; padding: 13px 34px; margin: 0 7px; border-radius: 999px; text-transform: uppercase; transition: all .15s; }
+  .title-btn:hover { background: #ff2e88; border-color: #ff2e88; box-shadow: 0 0 26px rgba(255,46,136,.65); }
+  #title-controls { margin-top: 20px; font-size: 13.5px; line-height: 1.9; color: #bdb4d9; text-shadow: 0 1px 6px rgba(0,0,0,.95); }
+  #title-controls b { color: #fff; }
+
+  /* ---------- Big map ---------- */
+  #bigmap { position: fixed; inset: 0; z-index: 9; display: none; align-items: center; justify-content: center; background: rgba(5,3,14,.82); }
+  #bigmap-box { text-align: center; }
+  #bigmap-canvas { border: 1px solid rgba(0,229,255,.45); border-radius: 14px; box-shadow: 0 18px 60px rgba(0,0,0,.7); }
+  #bigmap-hint { margin-top: 10px; font-size: 14px; color: #bdb4d9; letter-spacing: 1px; }
 </style>
 </head>
 <body>
-<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
-<p id="status" role="status" aria-live="polite"></p>
+<canvas id="game" aria-label="Leonida After Dark: an open-world crime game in the fictional city of Port Meridian"></canvas>
+<p id="status" role="status" aria-live="polite">Leonida After Dark is loading.</p>
+
+<div id="hud">
+  <div id="map-wrap">
+    <canvas id="minimap" width="176" height="176"></canvas>
+    <div id="cash">$0</div>
+    <div id="stars">☆☆☆☆☆</div>
+  </div>
+  <div id="objective-wrap">
+    <div id="objective-box"><span id="objective"></span><span id="objective-dist"></span></div>
+    <div id="timer"></div>
+  </div>
+  <div id="card"><div id="card-title"></div><div id="card-body"></div></div>
+  <div id="toast"></div>
+  <div id="bust-wrap"><div id="bust-label">BUSTED</div><div id="bust-bar"><div id="bust-fill"></div></div></div>
+  <div id="prompt"></div>
+  <div id="speedo"></div>
+</div>
+
+<div id="banner"><div id="banner-box"><div id="banner-title"></div><div id="banner-body"></div></div></div>
+
+<div id="bigmap"><div id="bigmap-box">
+  <canvas id="bigmap-canvas" width="760" height="600"></canvas>
+  <div id="bigmap-hint">PORT MERIDIAN — M to close</div>
+</div></div>
+
+<div id="title-screen"><div id="title-box">
+  <div id="title-kicker">Port Meridian · Serena Bay · One Night</div>
+  <div id="title-name">LEONIDA<br>AFTER DARK</div>
+  <p id="title-sub">Nico Vega drives for fixer Madame Zara. Nine jobs stand between him and a
+  $25,000 debt to the Cielo family — due by sunrise. Steal cars, run packages, tail marks,
+  and stay ahead of Meridian PD.</p>
+  <button class="title-btn" id="btn-new">New Night</button>
+  <button class="title-btn" id="btn-continue">Continue</button>
+  <div id="title-controls">
+    <b>WASD</b> walk / drive · <b>Mouse drag</b> camera · <b>E</b> enter / exit car · <b>Space</b> handbrake / shove ·
+    <b>Shift</b> sprint · <b>M</b> map · <b>P</b> pause
+  </div>
+</div></div>
+
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

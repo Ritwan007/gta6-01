@@ -53,17 +53,23 @@ export function createSave(G) {
     G.owned = data.owned.map((o) => ({ ...o }));
     G.coinsTaken = new Set(data.coins || []);
     G.flags.robUnlocked = !!(data.flags && data.flags.robUnlocked);
-    // Re-spawn every owned vehicle at its slot, with its saved id (exact restore).
+    // Re-spawn every owned vehicle at its slot. Fresh ids are assigned (the
+    // world was rebuilt with new ids, so a saved id could collide with a fresh
+    // car or miss entirely); the owned record and the saved inCar are remapped.
+    const idMap = new Map();
     for (const o of G.owned) {
       const slot = GARAGE_SLOTS[o.slot];
       if (!slot) continue;
-      const c = makeCar(o.kind, slot.x, slot.z, 0, { id: o.carId, parked: true, color: o.color });
+      const c = makeCar(o.kind, slot.x, slot.z, 0, { parked: true, color: o.color });
       c.hp = o.hp;
+      idMap.set(o.carId, c.id);
+      o.carId = c.id;
       G.cars.push(c);
     }
     p.x = data.px; p.z = data.pz; p.angle = data.angle;
     if (data.inCar != null) {
-      const c = G.cars.find((cc) => cc.id === data.inCar);
+      const newId = idMap.get(data.inCar);
+      const c = newId != null ? G.cars.find((cc) => cc.id === newId) : null;
       if (c) {
         p.inCar = c.id; c.driver = 'player'; c.parked = false;
         p.x = c.x; p.z = c.z;

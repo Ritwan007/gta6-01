@@ -161,11 +161,13 @@ function step(dt) {
   if (G.crimeCooldown > 0) G.crimeCooldown -= dt;
   if (G.shake > 0) G.shake = Math.max(0, G.shake - dt * 2);
   updateAim();
-  // Firing: hold for auto weapons, click edge for the rest.
+  // Firing: hold for auto weapons, click edge for the rest. A quick click's
+  // mouseup can land before the next fixed step, so the edge alone must fire
+  // a semi-auto weapon — never require mouse.down to still be held for it.
   if (G.mode === 'play') {
     const clicked = G.input.takeClick();
     const w = G.player.weapons[G.player.weapon];
-    if (G.input.mouse.down && (w.auto || clicked)) tryFire(G);
+    if ((w.auto && G.input.mouse.down) || clicked) tryFire(G);
   } else G.input.takeClick();
   if (G.mode === 'play' || G.mode === 'title') {
     updatePlayer(G, dt);

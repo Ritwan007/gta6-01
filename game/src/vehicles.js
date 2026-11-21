@@ -121,7 +121,7 @@ export function updateCars(G, dt) {
         a.x -= nx * push; a.z -= nz * push; b.x += nx * push; b.z += nz * push;
         const rel = Math.abs(a.speed - b.speed);
         if (rel > 6 && a.ramT <= 0 && b.ramT <= 0) {
-          const dmg = Math.min(18, (rel - 6) * 1.6);
+          const dmg = Math.min(10, (rel - 6) * 1.0);
           a.hp -= dmg; b.hp -= dmg; a.ramT = 0.6; b.ramT = 0.6;
           a.speed *= 0.55; b.speed *= 0.55;
           G.audio.crash();
@@ -143,7 +143,11 @@ export function updateCars(G, dt) {
   }
   // Wrecked cars: burn out, stop.
   for (const c of G.cars) {
-    if (c.hp <= 0 && c.speed !== 0) { c.speed = 0; if (c.driver === 'player') G.player.inCar = null; c.driver = 'none'; }
+    if (c.hp <= 0 && c.speed !== 0) {
+      c.speed = 0;
+      if (c.driver === 'player') { G.player.inCar = null; G.hud.toast('Your car is wrecked!'); }
+      c.driver = 'none';
+    }
   }
 }
 
@@ -200,14 +204,16 @@ function updatePoliceCar(G, c, dt) {
   // Pursuit top speed is capped BELOW the fastest player car so escape is possible.
   const cap = Math.min(30, 18 + G.wanted * 2.2);
   driveToward(G, c, target.x, target.z, dt, cap / VEHICLES.police.top, 1);
-  // Ram: one-time impact on contact transition.
+  // Ram: one-time impact on contact transition; the rammer bounces OFF (its
+  // speed is cut) so it cannot sit glued and re-ram every cooldown.
   const p = G.player;
   const pc = playerCar(G);
   const tx = pc ? pc.x : p.x, tz = pc ? pc.z : p.z;
-  if (dist(c.x, c.z, tx, tz) < 3.4 && c.ramT <= 0) {
+  if (dist(c.x, c.z, tx, tz) < 3.4 && c.ramT <= 0 && Math.abs(c.speed) > 8) {
     c.ramT = 0.8;
-    if (pc) { pc.hp -= 10; pc.speed *= 0.5; }
-    else { p.hp -= 8; }
+    c.speed *= 0.35; // bounce off after the hit
+    if (pc) { pc.hp -= 6; pc.speed *= 0.5; }
+    else { p.hp -= 5; }
     G.shake = Math.max(G.shake, 0.5);
     G.audio.crash();
   }

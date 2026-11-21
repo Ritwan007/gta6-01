@@ -99,7 +99,7 @@ function stealOrEnter(G, car) {
     G.hud.toast(`You hop into the ${car.name}.`);
   }
   // Mission step hooks (steal/enter steps complete on entry).
-  G.mission.onEnterCar(G, car);
+  G.mission.onEnterCar(car);
 }
 
 export function storeCar(G, car) {
@@ -149,6 +149,6 @@ export function updateHoldup(G, dt) {
     if (bag > 0) { p.cash += bag; G.audio.chaChing(); G.hud.toast(`Cash bag grabbed: +$${bag}!`); }
     G.police.commitCrime('robbery');
     G.hud.feed('VBPD radio: "Robbery in progress at PelangiMart!"', 'police');
-    G.mission.onHoldupDone(G, h.mission);
+    G.mission.onHoldupDone(h.mission);
   }
 }

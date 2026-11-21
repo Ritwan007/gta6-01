@@ -89,7 +89,7 @@ export function damageTarget(G, t, dmg, angle) {
   if (t.hp <= 0) {
     t.hp = 0;
     if (t.state !== undefined && t.kind === 'enemy') {
-      G.mission.onEnemyKilled(G, t);
+      G.mission.onEnemyKilled(t);
       // Ammo drop.
       const p = G.player;
       const w = p.weapons[p.weapon];

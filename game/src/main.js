@@ -209,7 +209,14 @@ function updatePrompt() {
   const dGarage = dist(p.x, p.z, POINTS.garage.x, POINTS.garage.z);
   const car = nearestCar(G, p.x, p.z, 5);
   if (car) {
-    const freshAtGarage = dGarage < 20 && !G.owned.some((o) => o.carId === car.id);
+    const isOwned = G.owned.some((o) => o.carId === car.id);
+    const missionWaiting = dGarage < 20 && G.mission.index < 6 && !G.mission.active;
+    if (isOwned && missionWaiting) {
+      const d = MISSIONS[G.mission.index];
+      G.hud.setPrompt(`<b>E</b> — Start ${d.id} ${d.title}`);
+      return;
+    }
+    const freshAtGarage = dGarage < 20 && !isOwned;
     if (freshAtGarage && car.kind !== 'police' && !car.target) { G.hud.setPrompt(`<b>E</b> — Store the ${car.name} in your garage`); return; }
     const tag = car.target ? ' ★' : '';
     const verb = car.parked || car.driver === 'traffic' ? 'Steal' : 'Enter';

@@ -53,9 +53,14 @@ export function tryInteract(G) {
   const car = nearestCar(G, p.x, p.z, 5);
   // A fresh car at the garage is stored, not re-entered — except a police car
   // or a mission-target car, which can never be stored (they are entered).
-  const storeFirst = car && dGarage < 20 && car.kind !== 'police' && !car.target &&
-    !G.owned.some((o) => o.carId === car.id);
-  if (car && !storeFirst) { stealOrEnter(G, car); return; }
+  // An ALREADY-OWNED car at the garage while a mission is waiting is neither
+  // entered nor re-stored: E starts the mission instead (owned cars park at
+  // slots near the V marker, so E would otherwise be eaten by enter/store
+  // cycles and the mission could never start).
+  const isOwned = car && G.owned.some((o) => o.carId === car.id);
+  const missionWaiting = dGarage < 20 && G.mission.index < 6 && !G.mission.active;
+  const storeFirst = car && dGarage < 20 && car.kind !== 'police' && !car.target && !isOwned;
+  if (car && !storeFirst && !(isOwned && missionWaiting)) { stealOrEnter(G, car); return; }
   // 4. Store a car in the garage.
   if (dGarage < 20) {
     const storable = nearestStorableCar(G, p.x, p.z, 8);

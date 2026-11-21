@@ -271,9 +271,12 @@ export function nearestCar(G, x, z, maxR) {
 }
 export function nearestStorableCar(G, x, z, maxR) {
   // Garage store takes the nearest NON-police, non-mission-target car (r10 F3).
+  // A car already owned is already stored — never return it (re-storing would
+  // duplicate its owned record and shuffle it to another slot).
   let best = null, bd = maxR;
   for (const c of G.cars) {
     if (c.hp <= 0 || c.kind === 'police' || c.target) continue;
+    if (G.owned.some((o) => o.carId === c.id)) continue;
     const d = dist(x, z, c.x, c.z);
     if (d < bd) { bd = d; best = c; }
   }

@@ -1,107 +1,19 @@
 <!doctype html>
-<html lang="id">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VELORA HEAT — GTA 6 di Velora Bay</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23d02020'/><text x='8' y='12' font-size='11' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'>V</text></svg>">
-<link rel="stylesheet" href="./style.css">
+<title>Block Dodger</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  /* Read aloud, never shown: the status line screen readers announce. */
+  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+</style>
 </head>
 <body>
-<canvas id="game" aria-label="VELORA HEAT: game aksi open-world top-down di Velora Bay"></canvas>
+<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
 <p id="status" role="status" aria-live="polite"></p>
-
-<div id="hud" class="hidden">
-  <div id="hud-top-left">
-    <div id="hud-health"><div id="health-fill"></div><span id="health-label">HP</span></div>
-    <div id="hud-cash">$250</div>
-    <div id="hud-stars">☆☆☆☆☆</div>
-  </div>
-  <div id="hud-top-right">
-    <canvas id="minimap" width="190" height="190"></canvas>
-    <div id="hud-weapon">Tangan Kosong —</div>
-  </div>
-  <div id="hud-objective"></div>
-  <div id="hud-feed"></div>
-  <div id="hud-holdup" class="hidden">
-    <div id="hud-holdup-text">Merampok...</div>
-    <div id="holdup-bar"><div id="holdup-fill"></div></div>
-  </div>
-</div>
-
-<div id="title" class="overlay">
-  <div class="panel">
-    <h1>VELORA HEAT</h1>
-    <p class="subtitle">Velora Bay — kota ini milik siapa yang berani mengambilnya.</p>
-    <p class="story">Reno Karsa berutang pada Damar Wibowo. Sari Lestari memberinya pekerjaan demi pekerjaan — curi mobil, antar paket, kabur dari VBPD — sampai Damar datang menagih markasnya sendiri.</p>
-    <div class="menu-buttons">
-      <button id="btn-new">New Game</button>
-      <button id="btn-continue" disabled>Continue</button>
-      <button id="btn-how">Cara Bermain</button>
-    </div>
-    <div id="how" class="hidden">
-      <p><b>WASD</b> jalan / nyetir · <b>Shift</b> lari · <b>Mouse</b> arah bidik · <b>Klik</b> tembak · <b>E</b> interaksi (naik/curi/simpan mobil, mulai misi, rampok) · <b>1–4</b> ganti senjata · <b>R</b> isi ulang · <b>M</b> peta · <b>Esc</b> jeda · <b>Spasi</b> rem.</p>
-      <p>Curi mobil, rampok toko, dan kabur dari VBPD. Bintang panas naik kalau ada saksi. Bersembunyi di gudang atau tunggu sampai panas reda.</p>
-    </div>
-    <p class="credits">Game orisinal — Velora Bay, Reno Karsa, Sari Lestari, Damar Wibowo, VBPD. Semua gambar prosedural, semua suara disintesis. Tanpa aset eksternal.</p>
-  </div>
-</div>
-
-<div id="card" class="overlay hidden">
-  <div class="panel">
-    <h2 id="card-title">Misi</h2>
-    <p id="card-text"></p>
-    <div class="menu-buttons"><button id="btn-card">Lanjutkan</button></div>
-  </div>
-</div>
-
-<div id="pause" class="overlay hidden">
-  <div class="panel">
-    <h2>Jeda</h2>
-    <div class="menu-buttons">
-      <button id="btn-resume">Lanjutkan</button>
-      <button id="btn-save">Simpan</button>
-      <button id="btn-restart">Batalkan Misi</button>
-      <button id="btn-quit">Keluar ke Title</button>
-    </div>
-    <p id="save-note"></p>
-  </div>
-</div>
-
-<div id="map" class="overlay hidden">
-  <div class="panel wide">
-    <h2>Peta Velora Bay</h2>
-    <canvas id="map-canvas" width="640" height="640"></canvas>
-    <p class="hint">Tekan M atau Esc untuk kembali bermain. Berlian emas = tujuanmu saat ini.</p>
-  </div>
-</div>
-
-<div id="ending" class="overlay hidden">
-  <div class="panel">
-    <h1>VELORA HEAT</h1>
-    <h2>Velora Bay Bebas</h2>
-    <p>Reno Karsa menyelesaikan semua pekerjaan Sari Lestari, mengalahkan Damar Wibowo, dan kabur ke Marina Verde saat fajar. Kota ini kini miliknya — dan jalanan tidak pernah lupa.</p>
-    <p>Terima kasih sudah bermain. Free roam tetap terbuka: semua senjata, semua mobil, seluruh kota.</p>
-    <div class="menu-buttons"><button id="btn-ending">Free Roam</button></div>
-  </div>
-</div>
-
-<div id="wasted" class="overlay hidden">
-  <div class="panel">
-    <h1 class="big-red">WASTED</h1>
-    <p id="wasted-text"></p>
-    <div class="menu-buttons"><button id="btn-wasted">Bangkit</button></div>
-  </div>
-</div>
-
-<div id="busted" class="overlay hidden">
-  <div class="panel">
-    <h1 class="big-blue">BUSTED</h1>
-    <p id="busted-text"></p>
-    <div class="menu-buttons"><button id="btn-busted">Bebas</button></div>
-  </div>
-</div>
-
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

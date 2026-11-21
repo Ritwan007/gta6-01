@@ -207,14 +207,14 @@ function updatePrompt() {
   const dGarage = dist(p.x, p.z, POINTS.garage.x, POINTS.garage.z);
   const car = nearestCar(G, p.x, p.z, 5);
   if (car) {
-    const freshAtGarage = dGarage < 14 && !G.owned.some((o) => o.carId === car.id);
+    const freshAtGarage = dGarage < 20 && !G.owned.some((o) => o.carId === car.id);
     if (freshAtGarage && car.kind !== 'police' && !car.target) { G.hud.setPrompt(`<b>E</b> — Store the ${car.name} in your garage`); return; }
     const tag = car.target ? ' ★' : '';
     const verb = car.parked || car.driver === 'traffic' ? 'Steal' : 'Enter';
     G.hud.setPrompt(`<b>E</b> — ${verb} the ${car.name}${tag}`);
     return;
   }
-  if (dGarage < 14) {
+  if (dGarage < 20) {
     const storable = nearestStorableCar(G, p.x, p.z, 8);
     if (storable) { G.hud.setPrompt(`<b>E</b> — Store the ${storable.name} in your garage`); return; }
     if (G.wanted > 0 && !G.police.anySeesPlayer() && p.cash >= 300) { G.hud.setPrompt('<b>E</b> — Spray garage ($300) — clear your heat'); return; }

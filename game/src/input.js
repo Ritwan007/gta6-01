@@ -3,6 +3,7 @@ export class Input {
   constructor() {
     this.keys = new Set();
     this.mouse = { x: 640, y: 360, down: false };
+    this.clickQueued = false; // a real click that a 60 Hz poll must not miss
     this.pressed = new Set(); // edge-triggered keys, consumed each frame
     this.handlers = {};
     window.addEventListener('keydown', (e) => {
@@ -16,7 +17,7 @@ export class Input {
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => { this.keys.clear(); this.mouse.down = false; });
     window.addEventListener('mousemove', (e) => { this.mouse.x = e.clientX; this.mouse.y = e.clientY; });
-    window.addEventListener('mousedown', (e) => { if (e.button === 0) this.mouse.down = true; });
+    window.addEventListener('mousedown', (e) => { if (e.button === 0) { this.mouse.down = true; this.clickQueued = true; } });
     window.addEventListener('mouseup', (e) => { if (e.button === 0) this.mouse.down = false; });
     window.addEventListener('contextmenu', (e) => e.preventDefault());
   }

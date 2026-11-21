@@ -31,8 +31,9 @@ export function tryFire(G, dt) {
   const w = p.weapons[p.weapon];
   const def = WEAPONS[p.weapon];
   p.fireCd = Math.max(0, (p.fireCd || 0) - dt);
-  const wantFire = def.auto ? G.input.mouse.down : G.input.mouse.down && !p.mouseWasDown;
+  const wantFire = def.auto ? G.input.mouse.down : (G.input.clickQueued || (G.input.mouse.down && !p.mouseWasDown));
   p.mouseWasDown = G.input.mouse.down;
+  G.input.clickQueued = false;
   if (!wantFire || p.fireCd > 0) return;
   if (w.mag <= 0) {
     reload(G);

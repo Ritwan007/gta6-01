@@ -15,6 +15,9 @@
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 // Determinism: the copy is a plain tree copy and buildDossier is deterministic,
 // so running this file twice over the same tree writes byte-identical output.
+// (Verified for VELORA HEAT: two runs, `diff -r` clean, dossier sha256 stable.)
+// VELORA HEAT ships no screenshots in the starter set — the four staged shots
+// (1-cover.jpg .. 4-combat.jpg) are captured from the game's own ?shot= scenes.
 
 import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';

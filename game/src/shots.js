@@ -1,97 +1,79 @@
-// VELORA HEAT — staged ?shot= scenes for the four screenshots. Each scene
-// sets real game state (mode play, live HUD) and deterministic positions, so
-// the frame is a genuine render of the game's own code, never a composite.
-import { createCar } from './vehicles.js';
-import { createPed } from './pedestrians.js';
+// The screenshot scenes behind ?shot=start|play|end. Each one plays the real rules forward from a
+// fresh world for a fixed number of steps, steered by a simple autopilot (look ahead each way the
+// paddle could move, keep clear of blocks, chase the lowest coin when that is safe), so the frame
+// is what a short game really looks like and the same seed always gives the same frame.
+import { FIELD, PLAYER, STEP } from './config.js';
+import { EVENT_OVER, KIND_BLOCK } from './world.js';
+import { SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
 
-function clearTraffic(G) {
-  // Keep only parked/mission cars; remove traffic + police from the frame.
-  G.cars = G.cars.filter((c) => c.parked || c.mission);
-  for (const car of G.cars) car.speed = 0;
+const START_SECONDS = 5;
+const PLAY_SECONDS = 26;
+const END_LIMIT_SECONDS = 600;
+/**
+ * How far ahead, in seconds, the autopilot checks each way it could move: the play scene's pilot
+ * looks well ahead and keeps all its lives; the end scene's looks only a moment ahead, so it is
+ * caught out once the blocks speed up, as a hurried player is.
+ */
+const HORIZON_PLAY = 0.7;
+const HORIZON_END = 0.25;
+const SAMPLE = 1 / 30;
+const DIRECTIONS = [0, -1, 1];
+/** Extra room, each side, it keeps between the paddle and a block. */
+const MARGIN = 10;
+
+/** Seconds until moving in `direction` (-1, 0, 1) runs the paddle into a block; Infinity when it never does. */
+function timeToHit(state, direction, horizon) {
+  const player = state.player;
+  for (let t = SAMPLE; t <= horizon; t += SAMPLE) {
+    const x = Math.min(FIELD.width - player.width, Math.max(0, player.x + direction * PLAYER.speed * t));
+    for (let index = 0; index < state.items.length; index += 1) {
+      const item = state.items[index];
+      if (!item.active || item.kind !== KIND_BLOCK) continue;
+      const y = item.y + item.speed * t;
+      if (y + item.height > player.y && y < player.y + player.height && item.x < x + player.width + MARGIN && item.x + item.width > x - MARGIN) return t;
+    }
+  }
+  return Infinity;
 }
 
-export function stageShot(G, name) {
-  G.mode = 'play';
-  G.tracers = [];
-  if (name === 'cover') {
-    // M1: Reno in the red Falco GT on Neon Mile, 2 stars, traffic around.
-    G.mission.index = 0; G.mission.active = true; G.mission.step = 2;
-    const gt = G.cars.find((c) => c.mission === 'M1');
-    G.player.enterCar(gt);
-    G.wanted = 2; // set after entering: the theft witness check may add heat
-    gt.x = 100; gt.z = -44; gt.angle = 0; gt.speed = 14;
-    const t1 = createCar('sedan', 60, -48, 0, { parked: false, driver: true }); t1.speed = 10;
-    const t2 = createCar('van', 150, -40, 0, { parked: false, driver: true }); t2.speed = 9;
-    const t3 = createCar('truck', 40, 44, Math.PI, { parked: false, driver: true }); t3.speed = 8;
-    G.cars.push(t1, t2, t3);
-    G.player.cash = 600;
-    G.feed('M1 First Wheels — Deliver the Falco GT to Karsa Auto Works');
-    G.cam.x = gt.x; G.cam.z = gt.z;
-  } else if (name === 'foot') {
-    // On foot in front of PelangiMart, pistol drawn, peds + parked cars.
-    G.mission.index = 1; G.mission.active = true; G.mission.step = 0;
-    G.wanted = 0;
-    G.player.x = 60; G.player.z = -132; G.player.angle = Math.PI / 2;
-    G.player.weapon = 'pistol';
-    G.player.weapons.pistol.unlocked = true;
-    G.player.cash = 875;
-    const s1 = createCar('sedan', 44, -120, Math.PI / 2, { parked: true });
-    const s2 = createCar('sedan', 44, -104, Math.PI / 2, { parked: true });
-    const s3 = createCar('bike', 44, -140, 0, { parked: true });
-    G.cars.push(s1, s2, s3);
-    for (let i = 0; i < 5; i += 1) {
-      const ped = createPed(G, 30 + i * 8, -120 + (i % 2) * 12);
-      ped.state = i === 2 ? 'flee' : 'walk';
-      G.peds.push(ped);
-    }
-    G.feed('M2 Hot Cargo — Take the Kuda Van at Old Harbor');
-    G.cam.x = G.player.x; G.cam.z = G.player.z;
-  } else if (name === 'chase') {
-    // M3: 4-star chase, VBPD Interceptors closing in.
-    G.mission.index = 2; G.mission.active = true; G.mission.step = 0;
-    G.wanted = 4;
-    clearTraffic(G);
-    const sedan = createCar('sedan', 0, 132, 0, { parked: false });
-    sedan.wasDriven = true;
-    G.cars.push(sedan);
-    G.player.enterCar(sedan);
-    sedan.speed = 20;
-    const p1 = createCar('police', -32, 128, 0, { driver: true }); p1.speed = 24;
-    const p2 = createCar('police', -52, 136, 0, { driver: true }); p2.speed = 24;
-    const p3 = createCar('police', 64, 132, Math.PI, { driver: true }); p3.speed = 18;
-    G.cars.push(p1, p2, p3);
-    G.player.cash = 1450;
-    G.feed('M3 Three-Star Run — Lose the heat, break line of sight');
-    G.cam.x = sedan.x; G.cam.z = sedan.z;
-  } else if (name === 'combat') {
-    // M6: garage defence, Tawon SMG out, crew attacking, tracer in the air.
-    G.mission.index = 5; G.mission.active = true; G.mission.step = 0;
-    G.mission.wave = 1;
-    G.wanted = 2;
-    clearTraffic(G);
-    G.player.x = -200; G.player.z = -44; G.player.angle = 0;
-    G.player.weapon = 'smg';
-    G.player.weapons.smg.unlocked = true;
-    G.player.weapons.smg.mag = 27;
-    G.player.weapons.smg.reserve = 90;
-    G.player.hp = 78;
-    G.player.cash = 3250;
-    G.enemies.push(
-      { x: -176, z: -44, hp: 45, speed: 3.4, fireT: 1 },
-      { x: -220, z: -88, hp: 30, speed: 3.4, fireT: 0.5 },
-      { x: -220, z: 4, hp: 45, speed: 3.4, fireT: 1.5 },
-    );
-    const gt = G.cars.find((c) => c.mission === 'M1');
-    if (gt) { gt.x = -176; gt.z = -60; gt.angle = 0.4; }
-    G.tracers.push({ x1: -200, z1: -44, x2: -176, z2: -44, t: 0.09, hit: true });
-    G.muzzle = 0.06;
-    G.feed('M6 Harbor King — Defend the garage · Wave 2');
-    G.cam.x = G.player.x; G.cam.z = G.player.z;
-  } else {
-    // Unknown shot name: plain title backdrop.
-    G.mode = 'title';
+/** Of the safe ways to move, the one toward the lowest coin (or the centre); else the one that is hit last. */
+function autopilot(state, horizon) {
+  const player = state.player;
+  let coin = null;
+  for (let index = 0; index < state.items.length; index += 1) {
+    const item = state.items[index];
+    if (item.active && item.kind !== KIND_BLOCK && (coin === null || item.y > coin.y)) coin = item;
   }
-  // Set the camera exactly on the subject for a stable frame.
-  const pc = G.playerCar;
-  if (pc) { G.cam.x = pc.x; G.cam.z = pc.z; }
+  const target = coin === null ? FIELD.width / 2 : coin.x + coin.width / 2;
+  const centre = player.x + player.width / 2;
+  const wanted = target > centre + 8 ? 1 : target < centre - 8 ? -1 : 0;
+  let best = wanted;
+  let bestTime = timeToHit(state, wanted, horizon);
+  for (let index = 0; index < DIRECTIONS.length && bestTime !== Infinity; index += 1) {
+    const time = timeToHit(state, DIRECTIONS[index], horizon);
+    if (time > bestTime) {
+      bestTime = time;
+      best = DIRECTIONS[index];
+    }
+  }
+  return best;
+}
+
+/**
+ * Set `world` to the named scene (start, play or end; any other name is start) and return the
+ * screen to draw over it and the best score to show.
+ */
+export function stageShot(name, world) {
+  world.reset();
+  if (name !== 'play' && name !== 'end') {
+    for (let index = 0; index < START_SECONDS / STEP; index += 1) world.step(STEP, 0, true);
+    return { screen: SCREEN_TITLE, best: 0 };
+  }
+  const limit = name === 'end' ? END_LIMIT_SECONDS : PLAY_SECONDS;
+  const horizon = name === 'end' ? HORIZON_END : HORIZON_PLAY;
+  for (let index = 0; index < limit / STEP; index += 1) {
+    if (world.step(STEP, autopilot(world.state, horizon), false) & EVENT_OVER) break;
+  }
+  const over = world.state.lives === 0;
+  return { screen: over ? SCREEN_OVER : SCREEN_PLAY, best: world.state.score };
 }

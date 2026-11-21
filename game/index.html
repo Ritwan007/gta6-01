@@ -1,19 +1,94 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Block Dodger</title>
-<style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* Read aloud, never shown: the status line screen readers announce. */
-  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-</style>
+<title>VELORA HEAT — Velora Bay</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23ff9a3c'/><text x='8' y='12' font-size='11' text-anchor='middle' fill='%23111'>V</text></svg>">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
-<p id="status" role="status" aria-live="polite"></p>
-<script type="module" src="./src/main.js"></script>
+<div id="wrap">
+  <canvas id="game" width="1280" height="720"></canvas>
+  <div id="hud" class="hidden">
+    <div id="hud-tl">
+      <div id="healthbar"><div id="healthfill"></div><span id="healthtext">100</span></div>
+      <div id="cashline">$<span id="cash">250</span></div>
+      <div id="stars"><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span></div>
+    </div>
+    <div id="objective" class="hidden"><span id="obj-title"></span><span id="obj-text"></span><span id="obj-timer"></span></div>
+    <div id="hud-tr">
+      <div id="weaponline"><span id="weaponname">Fists</span> <span id="ammo"></span></div>
+      <div id="speedline"><span id="speed">0</span> KM/H</div>
+      <div id="wantedlabel">HEAT</div>
+    </div>
+    <div id="feed"></div>
+    <div id="prompt" class="hidden"></div>
+    <div id="minimap-wrap"><canvas id="minimap" width="190" height="190"></canvas><div id="minimap-label">VELORA BAY</div></div>
+    <div id="toast" class="hidden"></div>
+  </div>
+  <div id="title" class="overlay">
+    <div class="title-inner">
+      <div class="title-kicker">MAKE GTA 6 &middot; gta6-01</div>
+      <h1>VELORA<br>HEAT</h1>
+      <div class="title-sub">Velora Bay &mdash; a sun-soaked open-world crime game</div>
+      <div class="title-story">Reno Karsa owes the Pier King for a lost delivery. Sari Lestari gives him work at Lestari Motors &mdash; job by job &mdash; until Damar Wibowo comes for the garage itself.</div>
+      <div class="menu">
+        <button id="btn-new">NEW GAME</button>
+        <button id="btn-continue" class="hidden">CONTINUE</button>
+        <button id="btn-how">HOW TO PLAY</button>
+        <button id="btn-credits">CREDITS</button>
+      </div>
+      <div id="howto" class="hidden panel">
+        <b>WASD</b> move / drive &nbsp; <b>Shift</b> sprint &nbsp; <b>E</b> enter / steal car, interact<br>
+        <b>Mouse</b> aim &nbsp; <b>Click</b> fire &nbsp; <b>R</b> reload &nbsp; <b>1&ndash;4</b> switch weapon<br>
+        <b>M</b> city map &nbsp; <b>Esc</b> pause &nbsp; <b>Space</b> handbrake<br>
+        Steal cars, run missions at the gold <b>V</b> marker, rob PelangiMart, lose the heat at hideouts or the spray garage.
+      </div>
+      <div id="credits" class="hidden panel">VELORA HEAT &mdash; original game for make.fun gta6-01. City, characters, vehicles, weapons, story, art and sound are all original. Built with plain canvas 2D + synthesized WebAudio. No Rockstar / GTA content.</div>
+      <div class="title-foot">WASD drive &middot; E steal &middot; 6 missions &middot; 6 cars &middot; 4 weapons &middot; VBPD heat 1&ndash;5</div>
+    </div>
+  </div>
+  <div id="pause" class="overlay hidden">
+    <div class="menu-panel">
+      <h2>PAUSED</h2>
+      <div class="menu"><button id="btn-resume">RESUME</button><button id="btn-save">SAVE GAME</button><button id="btn-restart-mission">RESTART MISSION</button><button id="btn-quit">QUIT TO TITLE</button></div>
+      <div id="save-note"></div>
+    </div>
+  </div>
+  <div id="mapov" class="overlay hidden">
+    <div class="map-panel">
+      <h2>VELORA BAY &mdash; CITY MAP <span class="map-hint">(M / Esc to close)</span></h2>
+      <canvas id="bigmap" width="760" height="560"></canvas>
+      <div class="map-legend"><span class="lg gold">&#9670; mission</span><span class="lg green">V garage</span><span class="lg red">&#9670; police</span><span class="lg blue">&#9670; you</span><span class="lg orange">S shop</span><span class="lg purple">H hideout</span></div>
+    </div>
+  </div>
+  <div id="card" class="overlay hidden">
+    <div class="card-panel">
+      <div id="card-kicker"></div>
+      <h2 id="card-title"></h2>
+      <p id="card-text"></p>
+      <div id="card-reward"></div>
+      <button id="btn-card">CONTINUE</button>
+    </div>
+  </div>
+  <div id="over" class="overlay hidden">
+    <div class="card-panel over-panel">
+      <h2 id="over-title">WASTED</h2>
+      <p id="over-text"></p>
+      <div class="menu"><button id="btn-retry">RETRY MISSION</button><button id="btn-over-title">QUIT TO TITLE</button></div>
+    </div>
+  </div>
+  <div id="ending" class="overlay hidden">
+    <div class="card-panel">
+      <div class="card-kicker">FINALE</div>
+      <h2>THE PIER KING FALLS</h2>
+      <p>Reno holds the garage, Damar's crew scatters, and the marina lights come on over Velora Bay. The debt is paid &mdash; in full. Free roam continues: every car, every weapon, every street is yours.</p>
+      <div id="ending-stats"></div>
+      <button id="btn-ending">KEEP PLAYING</button>
+    </div>
+  </div>
+</div>
+<script type="module" src="src/main.js"></script>
 </body>
 </html>

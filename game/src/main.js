@@ -288,7 +288,7 @@ function draw() {
   drawTracers();
   drawParticles();
   ctx.restore();
-  if (G.mode === 'play' || G.mode === 'pause' || G.mode === 'map') {
+  if (G.mode === 'play' || G.mode === 'pause' || G.mode === 'map' || G.mode === 'card') {
     G.hud.updateVitals();
     G.hud.updateObjective();
     G.hud.drawMinimap();
@@ -613,6 +613,8 @@ if (shot) {
   // Screenshot mode: stage the scene, paint twice, signal readiness.
   showTitle();
   stageShot(G, shot);
+  document.getElementById('title').classList.add('hidden'); // staged scenes play, they are not the title screen
+  G.hud.showHud(true);
   let painted = 0;
   function paint() {
     draw();

@@ -120,7 +120,12 @@ export function updateCars(G, dt) {
         const push = (min - d) / 2, nx = dx / d, nz = dz / d;
         a.x -= nx * push; a.z -= nz * push; b.x += nx * push; b.z += nz * push;
         const rel = Math.abs(a.speed - b.speed);
-        if (rel > 6 && a.ramT <= 0 && b.ramT <= 0) {
+        // Police-vs-player contact is owned by the pursuit ram system — the
+        // car-car block must not double-dip on the same hit (14 dmg/contact
+        // wrecked the GT in seconds during the M4 escape).
+        const policePlayer = (a.driver === 'police' && b.driver === 'player') ||
+          (a.driver === 'player' && b.driver === 'police');
+        if (rel > 6 && a.ramT <= 0 && b.ramT <= 0 && !policePlayer) {
           const dmg = Math.min(10, (rel - 6) * 1.0);
           a.hp -= dmg; b.hp -= dmg; a.ramT = 0.6; b.ramT = 0.6;
           a.speed *= 0.55; b.speed *= 0.55;
@@ -226,9 +231,9 @@ function updatePoliceCar(G, c, dt) {
   const pc = playerCar(G);
   const tx = pc ? pc.x : p.x, tz = pc ? pc.z : p.z;
   if (dist(c.x, c.z, tx, tz) < 3.4 && c.ramT <= 0 && Math.abs(c.speed) > 8) {
-    c.ramT = 1.2;
+    c.ramT = 1.5;
     c.speed *= 0.35; // bounce off after the hit
-    if (pc) { pc.hp -= 4; pc.speed *= 0.5; }
+    if (pc) { pc.hp -= 3; pc.speed *= 0.5; }
     else { p.hp -= 5; }
     G.shake = Math.max(G.shake, 0.5);
     G.audio.crash();

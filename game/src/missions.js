@@ -99,6 +99,9 @@ export function createMission(G) {
     M.active = false;
     // The delivered target car stops being a mission target.
     for (const c of G.cars) if (c.target) c.target = false;
+    // Job done — the pursuit breaks off. (M3 sets its own 3 HEAT at start, so
+    // its escape still plays out; the heat only clears when a job completes.)
+    G.police.clearWanted('mission');
     G.audio.chaChing(); G.audio.stingGood();
     G.save.save(G);
     if (d.id === 'M6') {

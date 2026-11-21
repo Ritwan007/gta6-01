@@ -14,9 +14,14 @@ export function createPolice(G) {
   let pending = null; // {add, set} waiting on a witness call
 
   function inHideout() {
+    // Use the CAR position when driving: p.x/p.z are stale while in a car
+    // (they hold the entry point), so a driver in the hideout would never
+    // count as concealed.
     const p = G.player;
-    return dist(p.x, p.z, POINTS.hideout1.x, POINTS.hideout1.z) < HIDEOUT_R ||
-      dist(p.x, p.z, POINTS.hideout2.x, POINTS.hideout2.z) < HIDEOUT_R;
+    const pc = G.cars.find((c) => c.id === p.inCar);
+    const px = pc ? pc.x : p.x, pz = pc ? pc.z : p.z;
+    return dist(px, pz, POINTS.hideout1.x, POINTS.hideout1.z) < HIDEOUT_R ||
+      dist(px, pz, POINTS.hideout2.x, POINTS.hideout2.z) < HIDEOUT_R;
   }
   function anySeesPlayer() {
     if (G.wanted <= 0) return false;

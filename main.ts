@@ -16,7 +16,7 @@
 // twice over the same tree produces byte-identical output (verified in the
 // round-14 play-test: dossier.json sha256 compared across two runs).
 
-import { cpSync, existsSync, mkdirSync, writeFileSync, statSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, writeFileSync, statSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
@@ -52,4 +52,7 @@ writeFileSync(
 // VELORA HEAT handoff note (authored for this entry): report the handed-in size
 // so a local run can be eyeballed against the caps without opening the dossier.
 const dossierBytes = statSync(join(out, 'dossier.json')).size;
-console.log(`VELORA HEAT handed in: dossier.json ${dossierBytes} bytes (cap 1572864).`);
+const shotCount = existsSync(join(here, 'screenshots'))
+  ? readdirSync(join(here, 'screenshots')).filter((f) => /\.(jpe?g|png)$/i.test(f)).length
+  : 0;
+console.log(`VELORA HEAT handed in: dossier.json ${dossierBytes} bytes (cap 1572864), ${shotCount} screenshot(s) (cap 4).`);

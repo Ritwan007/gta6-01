@@ -1,299 +1,350 @@
-// missions.js — Madame Zara's nine jobs: pure definitions plus the
-// MissionDirector state machine that walks a player through their stages.
-// No three.js and no DOM: game.js feeds it positions and events each frame and
-// renders whatever the director says the objective is. The Node test suite
-// drives this same machine through every mission to prove the story completes.
+// missions.js — the debt arc, run live in the world.
+//
+// A MissionRunner watches the save for the next unfinished mission, plants
+// a pillar of gold light on its start point, and walks the player through
+// its objectives: fares, timed runs, package collects, a checkpoint dash,
+// a follow job, two steals and a final escape. Everything the runner needs
+// from the rest of the game comes in through hooks, so the rules it
+// enforces stay the ones in logic.js.
 
-import { DAWN_RUN_GATES, LANDMARKS as L, STAR_CACHE_POINTS } from './cityplan.js';
-import { groundDistance } from './rng.js';
+import * as THREE from "three";
+import { MISSIONS, nextMission } from "./logic.js";
 
-export const DEBT = 25000;
+const GOLD = 0xffc93c;
 
-export const MISSIONS = [
-  {
-    id: 'neon-welcome',
-    title: 'Neon Welcome',
-    brief: 'Zara: "My coupe, my rules. Take her to the Palms Royale and don\'t scratch the paint."',
-    reward: 1200,
-    stages: [{ kind: 'goto', at: L.hotelFront, radius: 9, label: 'Drive to the Palms Royale' }],
-  },
-  {
-    id: 'the-package',
-    title: 'The Package',
-    brief: 'Zara: "A crate is waiting at the marina warehouse. It goes to the Ocean Drive garage. No questions."',
-    reward: 2000,
-    stages: [
-      { kind: 'pickup', at: L.marinaWarehouse, radius: 8, label: 'Collect the crate at the marina warehouse' },
-      { kind: 'goto', at: L.oceanGarage, radius: 9, label: 'Deliver the crate to the Ocean Drive garage' },
-    ],
-  },
-  {
-    id: 'eyes-on-the-mark',
-    title: 'Eyes on the Mark',
-    brief: 'Zara: "The silver Comet is Cielo\'s bagman. Stay on him — close enough to see, far enough to breathe."',
-    reward: 2400,
-    stages: [{ kind: 'tail', duration: 45, label: 'Tail the silver Comet (stay 16–60 m back)' }],
-  },
-  {
-    id: 'starlight-run',
-    title: 'Starlight Run',
-    brief: 'Zara: "Five star caches lit across the city before the buyer changes his mind. Move."',
-    reward: 2600,
-    stages: [{ kind: 'collect', points: STAR_CACHE_POINTS, radius: 7, timeLimit: 170, label: 'Collect the star caches' }],
-  },
-  {
-    id: 'sirens',
-    title: 'Sirens',
-    brief: 'Zara: "The overlook meet is a set-up — Meridian PD is already rolling. Lose them and come home."',
-    reward: 3000,
-    stages: [
-      { kind: 'goto', at: { x: 64, z: -128 }, radius: 9, label: 'Go to the overlook meet' },
-      { kind: 'escape', at: L.safehouse, radius: 10, heatStars: 2, label: 'Lose the police and reach the safehouse' },
-    ],
-  },
-  {
-    id: 'dockside-ghost',
-    title: 'Dockside Ghost',
-    brief: 'Zara: "The Cielo ledger sits in the dockyard, and cameras hate a face. Go on foot, ghost."',
-    reward: 2800,
-    stages: [
-      { kind: 'goto', at: L.ledgerCrate, radius: 4, needFoot: true, label: 'Take the ledger from the dockyard (on foot)' },
-      { kind: 'goto', at: L.dockGate, radius: 9, label: 'Get back to the dock gate' },
-    ],
-  },
-  {
-    id: 'repo-man',
-    title: 'Repo Man',
-    brief: 'Zara: "A gold Vortex GT sits at the Casino Cielo valet, and its owner owes us. It is yours now. Bring it to my yard."',
-    reward: 3400,
-    stages: [
-      { kind: 'steal', at: L.casinoValet, radius: 6, label: 'Steal the gold Vortex GT from the casino valet' },
-      { kind: 'goto', at: L.zaraYard, radius: 10, label: 'Deliver the Vortex to Zara\'s yard' },
-    ],
-  },
-  {
-    id: 'the-exchange',
-    title: 'The Exchange',
-    brief: 'Zara: "Meet the buyer at the pier. If it smells wrong, it is wrong — run for the boathouse."',
-    reward: 4200,
-    stages: [
-      { kind: 'goto', at: L.pierMeet, radius: 8, label: 'Meet the buyer at the pier' },
-      { kind: 'escape', at: L.boathouse, radius: 10, heatStars: 3, label: 'Escape to the boathouse' },
-    ],
-  },
-  {
-    id: 'dawn-run',
-    title: 'Dawn Run',
-    brief: 'Zara: "Last job, Nico. Six gates, one sunrise. Pay the Cielo debt and Port Meridian is yours."',
-    reward: 6000,
-    stages: [{ kind: 'gates', points: DAWN_RUN_GATES, radius: 10, timeLimit: 260, label: 'Run the six dawn gates' }],
-  },
-];
+function labelSprite(text) {
+  const c = document.createElement("canvas");
+  c.width = 512; c.height = 96;
+  const g = c.getContext("2d");
+  g.font = "bold 44px Arial, sans-serif";
+  g.textAlign = "center";
+  g.shadowColor = "#000";
+  g.shadowBlur = 10;
+  g.fillStyle = "#ffd76a";
+  g.fillText(text.toUpperCase(), 256, 58);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  sprite.scale.set(17, 3.2, 1);
+  return sprite;
+}
 
-/**
- * Walks one player through MISSIONS. Hooks (all optional):
- * onMissionStart(mission, index), onStage(stage, mission),
- * onMessage(text), onMissionComplete(mission, index), onAllComplete(),
- * onMissionFailed(mission, reason).
- */
-export class MissionDirector {
-  constructor(hooks = {}) {
-    this.hooks = hooks;
-    this.index = -1;
-    this.stageIndex = 0;
+/** One glowing objective marker: pillar, ring and a floating label. */
+class Marker {
+  constructor(scene, label) {
+    this.group = new THREE.Group();
+    const pillar = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.5, 1.5, 15, 14, 1, true),
+      new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.30, side: THREE.DoubleSide, depthWrite: false }),
+    );
+    pillar.position.y = 7.5;
+    this.group.add(pillar);
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(2.1, 0.16, 8, 28),
+      new THREE.MeshBasicMaterial({ color: GOLD }),
+    );
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = 0.25;
+    this.group.add(ring);
+    this.ring = ring;
+    if (label) {
+      const s = labelSprite(label);
+      s.position.y = 16.5;
+      this.group.add(s);
+    }
+    scene.add(this.group);
+  }
+  set(x, z) { this.group.position.set(x, 0, z); }
+  show(v) { this.group.visible = v; }
+  pulse(t) {
+    const s = 1 + Math.sin(t * 3.2) * 0.10;
+    this.ring.scale.set(s, s, 1);
+  }
+  get x() { return this.group.position.x; }
+  get z() { return this.group.position.z; }
+}
+
+/** Drive a car along grid waypoints at a steady cruise (the follow target). */
+class RouteDriver {
+  constructor(car, waypoints) {
+    this.car = car;
+    this.points = waypoints;
+    this.i = 0;
     this.done = false;
-    this.resetStageState();
   }
-
-  get mission() {
-    return this.index >= 0 && this.index < MISSIONS.length ? MISSIONS[this.index] : null;
-  }
-
-  get stage() {
-    const mission = this.mission;
-    return mission ? mission.stages[this.stageIndex] ?? null : null;
-  }
-
-  resetStageState() {
-    this.stageTime = 0;
-    this.tailProgress = 0;
-    this.spookTimer = 0;
-    this.loseTimer = 0;
-    this.collected = new Set();
-    this.gateIndex = 0;
-    this.timeLeft = null;
-  }
-
-  startAt(index) {
-    this.index = index;
-    this.stageIndex = 0;
-    this.done = false;
-    this.resetStageState();
-    const mission = this.mission;
-    if (mission) {
-      this.beginStageTimer();
-      this.hooks.onMissionStart?.(mission, index);
-      this.hooks.onStage?.(this.stage, mission);
-    } else {
-      this.done = true;
-      this.hooks.onAllComplete?.();
+  update(dt) {
+    const car = this.car;
+    if (this.done) { car.speed = Math.max(0, car.speed - 10 * dt); return; }
+    const target = this.points[this.i];
+    const dx = target.x - car.x, dz = target.z - car.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist < 5) {
+      this.i++;
+      if (this.i >= this.points.length) { this.done = true; return; }
+      return;
     }
-  }
-
-  beginStageTimer() {
-    const stage = this.stage;
-    this.timeLeft = stage && stage.timeLimit ? stage.timeLimit : null;
-  }
-
-  /** The point the HUD marker should point at right now, or null (tail stages track a car, not a point). */
-  stageTarget() {
-    const stage = this.stage;
-    if (!stage) return null;
-    if (stage.kind === 'collect') {
-      let best = null;
-      let bestDist = Infinity;
-      for (let i = 0; i < stage.points.length; i += 1) {
-        if (this.collected.has(i)) continue;
-        const d = this.lastPos ? groundDistance(this.lastPos, stage.points[i]) : 0;
-        if (d < bestDist) {
-          bestDist = d;
-          best = stage.points[i];
-        }
-      }
-      return best;
-    }
-    if (stage.kind === 'gates') return stage.points[this.gateIndex] ?? null;
-    return stage.at ?? null;
-  }
-
-  objectiveText() {
-    const stage = this.stage;
-    if (!stage) return this.done ? 'Free roam — Port Meridian is yours.' : '';
-    if (stage.kind === 'collect') return `${stage.label} (${this.collected.size}/${stage.points.length})`;
-    if (stage.kind === 'gates') return `${stage.label} (${this.gateIndex}/${stage.points.length})`;
-    if (stage.kind === 'tail') return `${stage.label} — ${Math.floor(this.tailProgress)}/${stage.duration}s`;
-    return stage.label;
-  }
-
-  /** Events from the game world that are not positions: entering the marked car, and so on. */
-  notify(event) {
-    const stage = this.stage;
-    if (!stage) return;
-    if (event === 'enteredTargetCar' && stage.kind === 'steal') this.completeStage();
-  }
-
-  completeStage() {
-    const mission = this.mission;
-    if (!mission) return;
-    if (this.stageIndex + 1 < mission.stages.length) {
-      this.stageIndex += 1;
-      this.resetStageState();
-      this.beginStageTimer();
-      this.hooks.onStage?.(this.stage, mission);
-    } else {
-      const finished = mission;
-      const finishedIndex = this.index;
-      this.hooks.onMissionComplete?.(finished, finishedIndex);
-      this.startAt(finishedIndex + 1);
-    }
-  }
-
-  failMission(reason) {
-    const mission = this.mission;
-    if (!mission) return;
-    this.hooks.onMissionFailed?.(mission, reason);
-    this.stageIndex = 0;
-    this.resetStageState();
-    this.beginStageTimer();
-    this.hooks.onStage?.(this.stage, mission);
-  }
-
-  /**
-   * Advance the machine. ctx: { pos:{x,z}, onFoot:boolean, stars:number,
-   * targetDistance:number|null } — targetDistance is for tail stages.
-   */
-  update(dt, ctx) {
-    const stage = this.stage;
-    if (!stage || this.done) return;
-    this.lastPos = ctx.pos;
-    this.stageTime += dt;
-
-    if (this.timeLeft !== null) {
-      this.timeLeft -= dt;
-      if (this.timeLeft <= 0) {
-        this.failMission('Out of time');
-        return;
-      }
-    }
-
-    switch (stage.kind) {
-      case 'goto':
-      case 'pickup': {
-        if (stage.needFoot && !ctx.onFoot) break;
-        if (groundDistance(ctx.pos, stage.at) <= stage.radius) this.completeStage();
-        break;
-      }
-      case 'collect': {
-        for (let i = 0; i < stage.points.length; i += 1) {
-          if (!this.collected.has(i) && groundDistance(ctx.pos, stage.points[i]) <= stage.radius) {
-            this.collected.add(i);
-            this.hooks.onMessage?.(`Cache ${this.collected.size} of ${stage.points.length}`);
-            if (this.collected.size === stage.points.length) {
-              this.completeStage();
-              return;
-            }
-          }
-        }
-        break;
-      }
-      case 'gates': {
-        const gate = stage.points[this.gateIndex];
-        if (gate && groundDistance(ctx.pos, gate) <= stage.radius) {
-          this.gateIndex += 1;
-          this.hooks.onMessage?.(`Gate ${this.gateIndex} of ${stage.points.length}`);
-          if (this.gateIndex >= stage.points.length) {
-            this.completeStage();
-            return;
-          }
-        }
-        break;
-      }
-      case 'escape': {
-        if (ctx.stars === 0 && groundDistance(ctx.pos, stage.at) <= stage.radius) this.completeStage();
-        break;
-      }
-      case 'tail': {
-        const d = ctx.targetDistance;
-        if (d === null || d === undefined) break;
-        if (d < 9) {
-          this.spookTimer += dt;
-          if (this.spookTimer > 2.5) {
-            this.tailProgress = Math.max(0, this.tailProgress - 10);
-            this.spookTimer = 0;
-            this.hooks.onMessage?.('Too close — he nearly made you. Back off.');
-          }
-        } else if (d > 110) {
-          this.loseTimer += dt;
-          if (this.loseTimer > 5) {
-            this.tailProgress = 0;
-            this.loseTimer = 0;
-            this.hooks.onMessage?.('You lost him. Pick up the tail again.');
-          }
-        } else {
-          this.spookTimer = Math.max(0, this.spookTimer - dt);
-          this.loseTimer = Math.max(0, this.loseTimer - dt);
-          if (d >= 16 && d <= 60) {
-            this.tailProgress += dt;
-            if (this.tailProgress >= stage.duration) {
-              this.completeStage();
-              return;
-            }
-          }
-        }
-        break;
-      }
-      default:
-        break; // 'steal' completes through notify()
-    }
+    const targetHeading = Math.atan2(dx, dz);
+    let turn = targetHeading - car.heading;
+    while (turn > Math.PI) turn -= Math.PI * 2;
+    while (turn < -Math.PI) turn += Math.PI * 2;
+    car.heading += Math.max(-1.7 * dt, Math.min(1.7 * dt, turn));
+    car.speed += Math.max(-8 * dt, Math.min(5 * dt, 9.5 - car.speed));
+    car.x += Math.sin(car.heading) * car.speed * dt;
+    car.z += Math.cos(car.heading) * car.speed * dt;
   }
 }
+
+function gridRoute(from, to) {
+  return [{ x: to.x, z: from.z }, { x: to.x, z: to.z }];
+}
+
+export class MissionRunner {
+  constructor(scene, fleet, save, hooks) {
+    this.scene = scene;
+    this.fleet = fleet;
+    this.save = save;
+    this.hooks = hooks;
+    this.phase = "offer"; // offer | active | done
+    this.mission = null;
+    this.step = 0;
+    this.remaining = [];
+    this.timeLeft = 0;
+    this.specialCar = null;
+    this.followDriver = null;
+    this.followCar = null;
+    this.lostTimer = 0;
+    this.spookTimer = 0;
+    this.offerMarker = new Marker(scene, "");
+    this.targetMarkers = [new Marker(scene, null), new Marker(scene, null), new Marker(scene, null),
+      new Marker(scene, null), new Marker(scene, null), new Marker(scene, null)];
+    this.offerMarker.show(false);
+    this.targetMarkers.forEach((m) => m.show(false));
+    this.refreshOffer();
+  }
+
+  refreshOffer() {
+    this.mission = nextMission(this.save);
+    this.phase = this.mission ? "offer" : "done";
+    this.step = 0;
+    if (this.mission) {
+      const start = this.mission.points[0];
+      this.offerMarker.set(start.x, start.z);
+      this.offerMarker.show(true);
+      this.spawnSpecialCar();
+    } else {
+      this.offerMarker.show(false);
+    }
+    this.hideTargets();
+  }
+
+  /** Steal missions keep their target car parked in the world, waiting. */
+  spawnSpecialCar() {
+    const m = this.mission;
+    if (!m || (m.kind !== "steal" && m.kind !== "escape")) return;
+    if (this.specialCar && !this.specialCar.dead) return;
+    const p = m.points[0];
+    this.specialCar = this.fleet.addCar({
+      x: p.x, z: p.z, heading: m.kind === "steal" ? 0.4 : -0.5,
+      color: m.kind === "steal" ? 0xc22e3e : 0xd8b13c,
+      kind: "sport",
+    });
+    if (this.specialCar) this.specialCar.parked = true;
+  }
+
+  hideTargets() {
+    this.targetMarkers.forEach((m) => m.show(false));
+  }
+
+  start() {
+    const m = this.mission;
+    this.phase = "active";
+    this.step = 0;
+    this.offerMarker.show(false);
+    this.hooks.banner(m.title, m.brief);
+    this.hooks.blip(660, 0.09);
+    if (m.heatOnStart) this.hooks.setHeat(m.heatOnStart);
+    if (m.timeLimit) this.timeLeft = m.timeLimit;
+    if (m.kind === "collect") {
+      this.remaining = m.points.map((p, i) => ({ ...p, i }));
+      this.remaining.forEach((p, i) => {
+        this.targetMarkers[i].set(p.x, p.z);
+        this.targetMarkers[i].show(true);
+      });
+    } else if (m.kind === "follow") {
+      const f = m.follow;
+      this.followCar = this.fleet.addCar({ x: f.from.x, z: f.from.z, heading: Math.PI, color: 0x8a93a5, kind: "sedan" });
+      this.followDriver = new RouteDriver(this.followCar, gridRoute(f.from, f.to));
+      this.lostTimer = 0;
+      this.spookTimer = 0;
+    } else if (m.kind === "steal" || m.kind === "escape") {
+      this.targetMarkers[0].set(m.points[1].x, m.points[1].z);
+      this.targetMarkers[0].show(false); // lights up once the car is taken
+    } else {
+      this.showStepTarget();
+    }
+  }
+
+  showStepTarget() {
+    this.hideTargets();
+    const p = this.mission.points[this.step];
+    if (!p) return;
+    this.targetMarkers[0].set(p.x, p.z);
+    this.targetMarkers[0].show(true);
+  }
+
+  get objectiveText() {
+    const m = this.mission;
+    if (!m) return this.save.finished ? "Debt cleared. Port Meridian is yours." : "Story complete — pay Venn Loans to close the book.";
+    if (this.phase === "offer") return `New work: ${m.title} — head for the gold light`;
+    if (m.kind === "collect") return `${m.title}: ${this.remaining.length} envelope(s) left`;
+    if (m.kind === "follow") return `${m.title}: stay on the grey sedan — not too close, not too far`;
+    if ((m.kind === "steal" || m.kind === "escape") && this.step === 0) return `${m.title}: ${m.points[0].label}`;
+    const p = m.points[this.step];
+    return p ? `${m.title}: ${p.label}` : m.title;
+  }
+
+  /** World positions the minimap should mark right now. */
+  markerPositions() {
+    if (!this.mission) return [];
+    if (this.phase === "offer") return [{ x: this.mission.points[0].x, z: this.mission.points[0].z }];
+    if (this.mission.kind === "collect") return this.remaining.map((p) => ({ x: p.x, z: p.z }));
+    if (this.mission.kind === "follow") return this.followCar ? [{ x: this.followCar.x, z: this.followCar.z }] : [];
+    if ((this.mission.kind === "steal" || this.mission.kind === "escape") && this.step === 0) {
+      return [{ x: this.mission.points[0].x, z: this.mission.points[0].z }];
+    }
+    const p = this.mission.points[this.step];
+    return p ? [{ x: p.x, z: p.z }] : [];
+  }
+
+  complete() {
+    const m = this.mission;
+    this.hideTargets();
+    if (this.followCar) { this.fleet.removeCar(this.followCar); this.followCar = null; this.followDriver = null; }
+    this.hooks.completeMission(m);
+    this.hooks.banner("Mission complete", `${m.title} — $${m.reward.toLocaleString()} earned`);
+    this.hooks.jingle();
+    this.refreshOffer();
+  }
+
+  fail(reason) {
+    this.hideTargets();
+    if (this.followCar) { this.fleet.removeCar(this.followCar); this.followCar = null; this.followDriver = null; }
+    this.hooks.toast(`Mission failed: ${reason} — the offer still stands`);
+    this.phase = "offer";
+    this.offerMarker.show(true);
+  }
+
+  update(dt, t) {
+    this.offerMarker.pulse(t);
+    this.targetMarkers.forEach((m) => m.pulse(t));
+    const player = this.hooks.getPlayer();
+    const m = this.mission;
+    if (!m) return;
+
+    if (this.phase === "offer") {
+      const p = m.points[0];
+      const nearSpecial = (m.kind === "steal" || m.kind === "escape")
+        ? player.car && this.specialCar && player.car === this.specialCar
+        : false;
+      if (nearSpecial) {
+        this.start();
+        this.onStole();
+        return;
+      }
+      if (Math.hypot(player.x - p.x, player.z - p.z) < 7) this.start();
+      return;
+    }
+    if (this.phase !== "active") return;
+
+    // Timers that can kill a run.
+    if (m.timeLimit) {
+      this.timeLeft -= dt;
+      if (this.timeLeft <= 0) return this.fail("out of time");
+    }
+
+    switch (m.kind) {
+      case "fare":
+      case "timed":
+      case "escape":
+      case "steal": {
+        if (m.kind === "steal" || m.kind === "escape") {
+          if (this.step === 0) {
+            if (player.car && this.specialCar && player.car === this.specialCar) this.onStole();
+            break;
+          }
+        }
+        const p = m.points[this.step];
+        const radius = player.car ? 7 : 5;
+        if (Math.hypot(player.x - p.x, player.z - p.z) < radius) {
+          this.step++;
+          this.hooks.blip(880, 0.07);
+          if (this.step >= m.points.length) this.complete();
+          else this.showStepTarget();
+        }
+        break;
+      }
+      case "collect": {
+        const hit = this.remaining.findIndex((p) => Math.hypot(player.x - p.x, player.z - p.z) < 5.5);
+        if (hit >= 0) {
+          this.remaining.splice(hit, 1);
+          this.hooks.blip(990, 0.07);
+          this.hooks.toast(`Envelope collected — ${this.remaining.length} to go`);
+          this.hideTargets();
+          this.remaining.forEach((p, i) => {
+            this.targetMarkers[i].set(p.x, p.z);
+            this.targetMarkers[i].show(true);
+          });
+          if (this.remaining.length === 0) this.complete();
+        }
+        break;
+      }
+      case "checkpoints": {
+        const p = m.points[this.step];
+        if (Math.hypot(player.x - p.x, player.z - p.z) < 9.5) {
+          this.step++;
+          this.hooks.blip(990, 0.07);
+          if (this.step >= m.points.length) this.complete();
+          else this.showStepTarget();
+        }
+        break;
+      }
+      case "follow": {
+        if (!this.followDriver || !this.followCar) break;
+        this.followDriver.update(dt);
+        const d = Math.hypot(player.x - this.followCar.x, player.z - this.followCar.z);
+        if (this.followDriver.done) {
+          if (d < m.follow.maxDist + 14) this.complete();
+          else this.fail("you lost him at the drop");
+          break;
+        }
+        if (d > m.follow.maxDist) {
+          this.lostTimer += dt;
+          if (this.lostTimer > 2) this.hooks.toast("You're losing him — close the gap!");
+          if (this.lostTimer > 6.5) return this.fail("you lost the courier");
+        } else this.lostTimer = Math.max(0, this.lostTimer - dt * 2);
+        if (d < m.follow.minDist) {
+          this.spookTimer += dt;
+          if (this.spookTimer > 2) this.hooks.toast("Too close — he'll make you!");
+          if (this.spookTimer > 5) return this.fail("you spooked the courier");
+        } else this.spookTimer = Math.max(0, this.spookTimer - dt * 2);
+        break;
+      }
+    }
+  }
+
+  onStole() {
+    const m = this.mission;
+    this.step = 1;
+    if (m.heatOnSteal) this.hooks.setHeat(m.heatOnSteal);
+    this.hooks.toast(m.kind === "escape" ? "That's her car. Now run." : "Got it — get it to the yard");
+    this.hooks.crime("theft");
+    this.showStepTarget();
+  }
+
+  /** Seconds left for the HUD, or null when no clock is running. */
+  get clockLeft() {
+    return this.phase === "active" && this.mission?.timeLimit ? Math.max(0, this.timeLeft) : null;
+  }
+}
+
+export { MISSIONS };

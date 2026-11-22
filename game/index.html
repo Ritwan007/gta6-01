@@ -1,100 +1,183 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Leonida After Dark — an open-world night in Port Meridian</title>
+<title>LEONIDA AFTER DARK — Port Meridian</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0714; font-family: "Segoe UI", system-ui, Arial, sans-serif; color: #f2ecff; }
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  :root {
+    --pink: #ff2e88; --cyan: #22d3ee; --gold: #ffc93c; --ink: #0a0d1a;
+    --panel: rgba(8, 10, 24, 0.78); --line: rgba(140, 170, 230, 0.45);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--ink); }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: #eef2ff; }
+  #game { position: fixed; inset: 0; }
+  #game canvas { display: block; }
 
   /* ---------- HUD ---------- */
-  #hud { display: none; position: fixed; inset: 0; pointer-events: none; z-index: 5; }
-  #map-wrap { position: absolute; top: 14px; left: 14px; text-align: left; }
-  #minimap { width: 176px; height: 176px; border-radius: 50%; box-shadow: 0 4px 24px rgba(0,0,0,.55); }
-  #cash { margin-top: 8px; font-size: 24px; font-weight: 700; color: #3dff8f; text-shadow: 0 2px 8px rgba(0,0,0,.8); letter-spacing: .5px; }
-  #stars { font-size: 21px; color: #ffd23e; text-shadow: 0 0 10px rgba(255,160,0,.65), 0 2px 6px rgba(0,0,0,.8); letter-spacing: 2px; }
-  #objective-wrap { position: absolute; top: 14px; right: 14px; max-width: 360px; text-align: right; }
-  #objective-box { display: inline-block; background: rgba(10,8,24,.72); border: 1px solid rgba(255,46,136,.55); border-radius: 10px; padding: 9px 13px; font-size: 16.5px; line-height: 1.35; box-shadow: 0 4px 18px rgba(0,0,0,.5); }
-  #objective-dist { color: #ffd23e; font-weight: 700; margin-left: 8px; white-space: nowrap; }
-  #timer { margin-top: 8px; font-size: 26px; font-weight: 800; color: #ffe9a8; text-shadow: 0 2px 8px rgba(0,0,0,.85); display: none; }
-  #card { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); width: min(560px, 72vw); background: rgba(12,8,28,.82); border: 1px solid rgba(0,229,255,.5); border-radius: 12px; padding: 12px 18px 13px; text-align: center; opacity: 0; transition: opacity .5s; box-shadow: 0 8px 30px rgba(0,0,0,.55); }
-  #card-title { font-size: 19px; font-weight: 800; letter-spacing: 1.5px; color: #7ef0ff; text-transform: uppercase; }
-  #card-body { margin-top: 4px; font-size: 15.5px; line-height: 1.45; color: #efe9ff; }
-  #toast { position: absolute; top: 118px; left: 50%; transform: translateX(-50%); background: rgba(10,8,24,.78); border-radius: 999px; padding: 7px 18px; font-size: 15.5px; color: #ffe9a8; opacity: 0; transition: opacity .35s; white-space: nowrap; box-shadow: 0 4px 16px rgba(0,0,0,.5); }
-  #speedo { position: absolute; right: 20px; bottom: 18px; font-size: 30px; font-weight: 800; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,.85); display: none; }
-  #prompt { position: absolute; left: 50%; bottom: 64px; transform: translateX(-50%); font-size: 16.5px; font-weight: 700; color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,.9); letter-spacing: .4px; }
-  #bust-wrap { position: absolute; left: 50%; bottom: 104px; transform: translateX(-50%); width: 300px; display: none; text-align: center; }
-  #bust-label { font-size: 14px; font-weight: 800; letter-spacing: 3px; color: #ff5468; text-shadow: 0 2px 8px rgba(0,0,0,.9); margin-bottom: 5px; }
-  #bust-bar { height: 9px; border-radius: 6px; background: rgba(255,255,255,.18); overflow: hidden; }
-  #bust-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #ff9a3d, #ff2038); }
+  #hud { position: fixed; inset: 0; pointer-events: none; display: none; }
+  #hud.on { display: block; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 8px 12px; backdrop-filter: blur(3px);
+  }
+  #wallet { position: absolute; top: 14px; left: 14px; min-width: 168px; }
+  #cash { font-size: 26px; font-weight: 800; color: #8aff5a; letter-spacing: 0.5px; }
+  #debt { font-size: 14px; font-weight: 700; color: #ff6a5e; letter-spacing: 1px; }
+  #debt.cleared { color: var(--gold); }
+  #wantedBox { position: absolute; top: 14px; right: 14px; text-align: right; }
+  #stars { font-size: 24px; letter-spacing: 3px; color: #3a4358; text-shadow: 0 0 6px rgba(0,0,0,0.6); }
+  #stars.hot { color: var(--gold); }
+  #clock { font-size: 20px; font-weight: 800; color: #fff; margin-top: 2px; display: none; }
+  #clock.urgent { color: #ff4d4d; animation: blink 0.5s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0.35; } }
+  #objective {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    max-width: 46vw; text-align: center; font-size: 16.5px; font-weight: 600;
+    color: #ffe9a8; text-shadow: 0 1px 4px #000;
+  }
+  #minimap { position: absolute; left: 14px; bottom: 14px; border-radius: 10px; }
+  #speed {
+    position: absolute; right: 18px; bottom: 18px; font-size: 24px; font-weight: 800;
+    color: #fff; text-shadow: 0 0 8px rgba(34,211,238,0.8); display: none;
+  }
+  #hint {
+    position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+    font-size: 15.5px; font-weight: 600; color: #cfe6ff; display: none;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 14px;
+  }
+  #banner {
+    position: absolute; top: 19%; left: 50%; transform: translateX(-50%);
+    width: min(620px, 86vw); text-align: center; display: none;
+    background: linear-gradient(180deg, rgba(10,8,26,0.88), rgba(10,8,26,0.66));
+    border-top: 2px solid var(--gold); border-bottom: 2px solid var(--gold);
+    padding: 14px 22px;
+  }
+  #banner-title { font-size: 27px; font-weight: 900; letter-spacing: 2.5px; color: var(--gold); text-transform: uppercase; }
+  #banner-sub { font-size: 15.5px; line-height: 1.45; color: #e8ecff; margin-top: 5px; }
+  #toast {
+    position: absolute; top: 64px; left: 50%; transform: translateX(-50%);
+    font-size: 16px; font-weight: 700; color: #fff; display: none;
+    background: rgba(20, 10, 30, 0.85); border: 1px solid var(--pink);
+    border-radius: 8px; padding: 7px 16px;
+  }
+  #bust-wrap {
+    position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%);
+    width: 300px; display: none; text-align: center;
+    font-size: 13px; font-weight: 800; letter-spacing: 2px; color: #ff8a80;
+  }
+  #bust-track { height: 9px; background: rgba(255,255,255,0.14); border-radius: 5px; margin-top: 4px; overflow: hidden; }
+  #bust-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #ff2e3c, #ff8a3c); }
 
-  /* ---------- Banner (busted / paused / dawn) ---------- */
-  #banner { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(5,3,14,.66); z-index: 8; }
-  #banner-box { text-align: center; max-width: 620px; padding: 30px 38px; background: rgba(12,8,28,.9); border: 1px solid rgba(255,46,136,.6); border-radius: 16px; box-shadow: 0 18px 60px rgba(0,0,0,.7); }
-  #banner-title { font-size: 40px; font-weight: 900; letter-spacing: 4px; color: #ff2e88; text-shadow: 0 0 24px rgba(255,46,136,.6); }
-  #banner-body { margin-top: 10px; font-size: 17px; line-height: 1.55; color: #efe9ff; }
-
-  /* ---------- Title screen ---------- */
-  #title-screen { position: fixed; inset: 0; z-index: 10; display: flex; align-items: flex-end; justify-content: center; background: linear-gradient(180deg, rgba(5,3,14,0) 40%, rgba(5,3,14,.72) 78%, rgba(5,3,14,.94)); }
-  #title-box { text-align: center; padding: 0 20px 42px; max-width: 760px; }
-  #title-kicker { font-size: 14px; letter-spacing: 6px; color: #7ef0ff; text-transform: uppercase; text-shadow: 0 2px 10px rgba(0,0,0,.9); }
-  #title-name { font-size: clamp(44px, 8.5vw, 92px); font-weight: 900; line-height: .98; letter-spacing: 2px; margin: 6px 0 4px; background: linear-gradient(92deg, #ff2e88 5%, #ff9a3d 45%, #ffe9a8 70%, #00e5ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 4px 22px rgba(255,46,136,.45)); }
-  #title-sub { font-size: 16.5px; line-height: 1.5; color: #e9e2ff; text-shadow: 0 2px 8px rgba(0,0,0,.95); margin: 8px auto 18px; max-width: 600px; }
-  .title-btn { pointer-events: auto; cursor: pointer; border: 1px solid rgba(255,255,255,.35); background: rgba(16,10,34,.85); color: #fff; font-size: 18px; font-weight: 800; letter-spacing: 2px; padding: 13px 34px; margin: 0 7px; border-radius: 999px; text-transform: uppercase; transition: all .15s; }
-  .title-btn:hover { background: #ff2e88; border-color: #ff2e88; box-shadow: 0 0 26px rgba(255,46,136,.65); }
-  #title-controls { margin-top: 20px; font-size: 13.5px; line-height: 1.9; color: #bdb4d9; text-shadow: 0 1px 6px rgba(0,0,0,.95); }
-  #title-controls b { color: #fff; }
-
-  /* ---------- Big map ---------- */
-  #bigmap { position: fixed; inset: 0; z-index: 9; display: none; align-items: center; justify-content: center; background: rgba(5,3,14,.82); }
-  #bigmap-box { text-align: center; }
-  #bigmap-canvas { border: 1px solid rgba(0,229,255,.45); border-radius: 14px; box-shadow: 0 18px 60px rgba(0,0,0,.7); }
-  #bigmap-hint { margin-top: 10px; font-size: 14px; color: #bdb4d9; letter-spacing: 1px; }
+  /* ---------- Overlays ---------- */
+  .overlay {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at 50% 120%, rgba(255,46,136,0.20), transparent 55%),
+                linear-gradient(180deg, rgba(5,6,18,0.42), rgba(5,6,18,0.78));
+    z-index: 5;
+  }
+  .panel {
+    text-align: center; max-width: 660px; width: 92vw; padding: 30px 38px;
+    background: rgba(7, 9, 22, 0.82); border: 1px solid var(--line); border-radius: 16px;
+    box-shadow: 0 0 60px rgba(34,211,238,0.15), 0 0 90px rgba(255,46,136,0.12);
+  }
+  h1.logo {
+    font-size: 54px; font-weight: 900; letter-spacing: 3px; line-height: 1.02;
+    color: #fff; text-shadow: 0 0 18px rgba(255,46,136,0.9), 0 0 46px rgba(255,46,136,0.5);
+  }
+  h1.logo span { color: var(--cyan); text-shadow: 0 0 18px rgba(34,211,238,0.9), 0 0 46px rgba(34,211,238,0.5); }
+  .tagline { margin-top: 8px; font-size: 16px; letter-spacing: 4px; color: var(--gold); font-weight: 700; }
+  .story { margin: 18px auto 4px; font-size: 15.5px; line-height: 1.55; color: #d6ddf5; max-width: 540px; }
+  .controls {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 4px 22px; text-align: left;
+    margin: 18px auto 6px; max-width: 520px; font-size: 14px; color: #aebadd;
+  }
+  .controls b { color: #fff; font-weight: 700; }
+  .btn {
+    pointer-events: auto; cursor: pointer; display: inline-block; margin: 12px 7px 2px;
+    padding: 13px 34px; font-size: 17px; font-weight: 800; letter-spacing: 1.5px;
+    color: #fff; background: linear-gradient(180deg, #ff2e88, #c2185b); border: none; border-radius: 10px;
+    box-shadow: 0 4px 22px rgba(255,46,136,0.45);
+  }
+  .btn:hover { filter: brightness(1.15); }
+  .btn.ghost { background: rgba(34,211,238,0.12); border: 1px solid var(--cyan); box-shadow: none; color: #bfefff; }
+  .btn[hidden] { display: none; }
+  .fineprint { margin-top: 14px; font-size: 12px; color: #7787ad; letter-spacing: 0.4px; }
+  #pause, #ending, #bigmap-wrap { display: none; }
+  #bigmap-wrap { background: rgba(4, 5, 14, 0.88); flex-direction: column; gap: 10px; }
+  #bigmap-wrap .cap { font-size: 15px; letter-spacing: 3px; color: var(--gold); font-weight: 700; }
 </style>
 </head>
 <body>
-<canvas id="game" aria-label="Leonida After Dark: an open-world crime game in the fictional city of Port Meridian"></canvas>
-<p id="status" role="status" aria-live="polite">Leonida After Dark is loading.</p>
+<div id="game"></div>
 
 <div id="hud">
-  <div id="map-wrap">
-    <canvas id="minimap" width="176" height="176"></canvas>
+  <div id="wallet" class="card">
     <div id="cash">$0</div>
+    <div id="debt">DEBT $25,000</div>
+  </div>
+  <div id="wantedBox" class="card">
     <div id="stars">☆☆☆☆☆</div>
+    <div id="clock">0:00</div>
   </div>
-  <div id="objective-wrap">
-    <div id="objective-box"><span id="objective"></span><span id="objective-dist"></span></div>
-    <div id="timer"></div>
-  </div>
-  <div id="card"><div id="card-title"></div><div id="card-body"></div></div>
+  <div id="objective" class="card"></div>
+  <canvas id="minimap" width="190" height="190"></canvas>
+  <div id="speed">0 km/h</div>
+  <div id="bust-wrap">BUSTED<div id="bust-track"><div id="bust-fill"></div></div></div>
+  <div id="hint"></div>
+  <div id="banner"><div id="banner-title"></div><div id="banner-sub"></div></div>
   <div id="toast"></div>
-  <div id="bust-wrap"><div id="bust-label">BUSTED</div><div id="bust-bar"><div id="bust-fill"></div></div></div>
-  <div id="prompt"></div>
-  <div id="speedo"></div>
 </div>
 
-<div id="banner"><div id="banner-box"><div id="banner-title"></div><div id="banner-body"></div></div></div>
-
-<div id="bigmap"><div id="bigmap-box">
-  <canvas id="bigmap-canvas" width="760" height="600"></canvas>
-  <div id="bigmap-hint">PORT MERIDIAN — M to close</div>
-</div></div>
-
-<div id="title-screen"><div id="title-box">
-  <div id="title-kicker">Port Meridian · Serena Bay · One Night</div>
-  <div id="title-name">LEONIDA<br>AFTER DARK</div>
-  <p id="title-sub">Nico Vega drives for fixer Madame Zara. Nine jobs stand between him and a
-  $25,000 debt to the Cielo family — due by sunrise. Steal cars, run packages, tail marks,
-  and stay ahead of Meridian PD.</p>
-  <button class="title-btn" id="btn-new">New Night</button>
-  <button class="title-btn" id="btn-continue">Continue</button>
-  <div id="title-controls">
-    <b>WASD</b> walk / drive · <b>Mouse drag</b> camera · <b>E</b> enter / exit car · <b>Space</b> handbrake / shove ·
-    <b>Shift</b> sprint · <b>M</b> map · <b>P</b> pause
+<div id="menu" class="overlay">
+  <div class="panel">
+    <h1 class="logo">LEONIDA<br><span>AFTER DARK</span></h1>
+    <div class="tagline">PORT MERIDIAN · ONE NIGHT · ONE DEBT</div>
+    <p class="story">
+      Jax Marlowe owes <b>$25,000</b> to Venn Loans, and Marta Venn collects at dawn.
+      Work the city's fixers through nine jobs — fares, drops, dashes and steals —
+      outrun the Port Meridian PD, and pay the ledger off before the night takes it out of his hide.
+    </p>
+    <div class="controls">
+      <div><b>W A S D</b> — walk / drive</div>
+      <div><b>Mouse drag</b> — camera · <b>wheel</b> — zoom</div>
+      <div><b>E</b> — enter / exit car, pay debts</div>
+      <div><b>Shift</b> — sprint / boost</div>
+      <div><b>Space</b> — shove / handbrake</div>
+      <div><b>M</b> — map · <b>Esc</b> — pause</div>
+    </div>
+    <button id="btn-new" class="btn">NEW GAME</button>
+    <button id="btn-continue" class="btn ghost" hidden>CONTINUE</button>
+    <div class="fineprint">An original open-world game. Best with sound on. Progress saves automatically.</div>
   </div>
-</div></div>
+</div>
+
+<div id="pause" class="overlay">
+  <div class="panel">
+    <h1 class="logo" style="font-size:38px;">PAUSED</h1>
+    <p class="story">The city waits. Marta doesn't.</p>
+    <button id="btn-resume" class="btn">RESUME</button>
+    <button id="btn-restart" class="btn ghost">RESTART NIGHT</button>
+  </div>
+</div>
+
+<div id="ending" class="overlay">
+  <div class="panel">
+    <h1 class="logo" style="font-size:40px;">DEBT <span>CLEARED</span></h1>
+    <p class="story">
+      The ledger is closed and the sun is coming up on Port Meridian.
+      Jax Marlowe walks out of Venn Loans a free man — the city, and its gold lights, are his to roam.
+    </p>
+    <button id="btn-free" class="btn">KEEP DRIVING</button>
+  </div>
+</div>
+
+<div id="bigmap-wrap" class="overlay">
+  <div class="cap">PORT MERIDIAN</div>
+  <canvas id="bigmap" width="680" height="460"></canvas>
+  <div class="cap" style="font-size:12px; color:#aebadd;">M / ESC TO CLOSE</div>
+</div>
 
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.min.js" } }

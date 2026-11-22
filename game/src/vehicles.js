@@ -1,238 +1,268 @@
-// vehicles.js — the car factory and the traffic system. Every car in Port
-// Meridian is built from the same few boxes: a body, a glass cabin, four
-// wheels merged into one mesh, and emissive lights, so thirty cars stay cheap
-// to draw. Traffic drives the cityplan grid by waypoint steering: pick the
-// next intersection, steer for its lane point, brake for whatever is ahead.
+// vehicles.js — every car in Port Meridian, and the traffic that drives them.
+//
+// All cars share four InstancedMeshes (bodies, cabins, wheels, lights), so
+// sixty cars cost a handful of draw calls. A car is a plain record —
+// position, heading, speed, colour, kind — and the fleet re-writes the
+// instance matrices each frame. Traffic cars steer themselves along the
+// road grid; the player's car and the police are driven from outside.
 
-import * as THREE from 'three';
-import { AVENUES, CITY, LANE_OFFSET, STREETS } from './cityplan.js';
-import { mergeParts } from './city.js';
-import { angleDelta, clamp, groundDistance, turnToward } from './rng.js';
+import * as THREE from "three";
+import { AVENUES_X, OCEAN_DRIVE_X, STREETS_Z, ROAD_HALF } from "./logic.js";
 
-export const CAR_LENGTH = 4.3;
-export const CAR_WIDTH = 1.9;
+export const CAR_COLORS = [
+  0xc23b4e, 0x3b6ec2, 0x3fae6a, 0xd8d3c8, 0x2b2f38, 0xd08a1d,
+  0x7a4fc2, 0x2ea8a0, 0xc2b280, 0x8a93a5, 0x94353f, 0x4e6e3b,
+];
 
-export const CAR_COLORS = [0xc23b4e, 0x2e6fc2, 0xd8d8dc, 0x22242a, 0x3fae6a, 0xe07b2a, 0x7a4fd0, 0xb8b0a4, 0x2aa8b8, 0x8c1f3a];
+const bodyGeo = new THREE.BoxGeometry(1.86, 0.62, 4.35);
+const cabinGeo = new THREE.BoxGeometry(1.66, 0.58, 2.0);
+const wheelGeo = new THREE.CylinderGeometry(0.37, 0.37, 0.3, 10);
+wheelGeo.rotateZ(Math.PI / 2); // axle along the car's width, not upright
+const lightGeo = new THREE.BoxGeometry(0.34, 0.16, 0.08);
+const barGeo = new THREE.BoxGeometry(1.3, 0.18, 0.5);
 
-const glassMat = new THREE.MeshPhongMaterial({ color: 0x10151f, shininess: 90, specular: 0x8899bb });
-const tyreMat = new THREE.MeshLambertMaterial({ color: 0x0c0c0e });
-const headlightMat = new THREE.MeshBasicMaterial({ color: 0xfff3c4, fog: false });
-const taillightMat = new THREE.MeshBasicMaterial({ color: 0xff2a30, fog: false });
-const bodyGeos = {
-  body: new THREE.BoxGeometry(CAR_WIDTH, 0.62, CAR_LENGTH),
-  cabin: new THREE.BoxGeometry(1.64, 0.55, 2.05),
-  sportCabin: new THREE.BoxGeometry(1.58, 0.42, 1.9),
-  spoiler: new THREE.BoxGeometry(1.7, 0.09, 0.42),
-};
-const wheelGeo = (() => {
-  const parts = [];
-  const one = new THREE.CylinderGeometry(0.37, 0.37, 0.3, 10);
-  for (const [x, z] of [[-0.88, 1.42], [0.88, 1.42], [-0.88, -1.42], [0.88, -1.42]]) {
-    parts.push({
-      geometry: one.clone(),
-      matrix: new THREE.Matrix4().compose(
-        new THREE.Vector3(x, 0.37, z),
-        new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI / 2)),
-        new THREE.Vector3(1, 1, 1),
-      ),
-    });
-  }
-  return mergeParts(parts);
-})();
+const _m = new THREE.Matrix4();
+const _q = new THREE.Quaternion();
+const _e = new THREE.Euler();
+const _p = new THREE.Vector3();
+const _s = new THREE.Vector3(1, 1, 1);
+const _c = new THREE.Color();
 
-/**
- * Build one car. Options: sport (low cabin + spoiler), police (black-and-white
- * with a light bar — the bar's lamps are in userData for police.js to flash).
- * The model's nose points along +Z; heading 0 faces +Z.
- */
-export function createCarMesh(color, options = {}) {
-  const group = new THREE.Group();
-  const paint = new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.3 });
-  const body = new THREE.Mesh(bodyGeos.body, paint);
-  body.position.y = 0.58;
-  group.add(body);
-  const cabin = new THREE.Mesh(options.sport ? bodyGeos.sportCabin : bodyGeos.cabin, glassMat);
-  cabin.position.set(0, options.sport ? 1.02 : 1.13, -0.18);
-  group.add(cabin);
-  const wheels = new THREE.Mesh(wheelGeo, tyreMat);
-  group.add(wheels);
-  const lights = new THREE.Group();
-  for (const x of [-0.6, 0.6]) {
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.14, 0.06), headlightMat);
-    head.position.set(x, 0.62, CAR_LENGTH / 2 + 0.01);
-    lights.add(head);
-    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, 0.06), taillightMat);
-    tail.position.set(x, 0.66, -CAR_LENGTH / 2 - 0.01);
-    lights.add(tail);
-  }
-  group.add(lights);
-  if (options.sport) {
-    const spoiler = new THREE.Mesh(bodyGeos.spoiler, paint);
-    spoiler.position.set(0, 1.05, -1.95);
-    group.add(spoiler);
-  }
-  if (options.police) {
-    const bar = new THREE.Group();
-    const baseBar = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.1, 0.5), tyreMat);
-    baseBar.position.y = 1.47;
-    bar.add(baseBar);
-    const lampGeo = new THREE.BoxGeometry(0.55, 0.16, 0.44);
-    const redLamp = new THREE.Mesh(lampGeo, new THREE.MeshBasicMaterial({ color: 0xff2038, fog: false }));
-    redLamp.position.set(-0.34, 1.58, 0);
-    bar.add(redLamp);
-    const blueLamp = new THREE.Mesh(lampGeo, new THREE.MeshBasicMaterial({ color: 0x2266ff, fog: false }));
-    blueLamp.position.set(0.34, 1.58, 0);
-    bar.add(blueLamp);
-    group.add(bar);
-    group.userData.redLamp = redLamp;
-    group.userData.blueLamp = blueLamp;
-  }
-  group.userData.paint = paint;
-  return group;
+function writeInstance(mesh, i, x, y, z, heading, extraYaw = 0) {
+  _e.set(0, heading + extraYaw, 0);
+  _q.setFromEuler(_e);
+  _p.set(x, y, z);
+  _s.set(1, 1, 1);
+  _m.compose(_p, _q, _s);
+  mesh.setMatrixAt(i, _m);
 }
 
-/** Forward vector for a heading (heading 0 = +Z, turning left is positive). */
-export function forwardOf(heading) {
-  return { x: Math.sin(heading), z: Math.cos(heading) };
-}
-
-/**
- * One traffic car: drives avenue/street lanes between intersections. `road`
- * is {axis:'x'|'z', at:number} — the avenue x or street z it runs along —
- * and `dir` its direction of travel along that axis.
- */
-class TrafficCar {
-  constructor(scene, rng) {
-    this.mesh = createCarMesh(rng.pick(CAR_COLORS), { sport: rng.chance(0.18) });
-    scene.add(this.mesh);
-    this.speed = 0;
-    this.cruise = rng.range(8.5, 12.5);
-    this.place(rng, null);
-  }
-
-  place(rng, near) {
-    const onAvenue = rng.chance(0.55);
-    if (onAvenue) {
-      const at = rng.pick(AVENUES);
-      const dir = rng.chance(0.5) ? 1 : -1;
-      const z = near ? clamp(near.z + rng.range(-140, 140), CITY.minZ + 14, CITY.maxZ - 14) : rng.range(CITY.minZ + 14, CITY.maxZ - 14);
-      this.road = { axis: 'z', at };
-      this.dir = dir;
-      this.pos = { x: at + (dir > 0 ? -LANE_OFFSET : LANE_OFFSET), z };
-    } else {
-      const at = rng.pick(STREETS);
-      const dir = rng.chance(0.5) ? 1 : -1;
-      const x = near ? clamp(near.x + rng.range(-140, 140), CITY.minX + 14, CITY.maxX - 14) : rng.range(CITY.minX + 14, CITY.maxX - 14);
-      this.road = { axis: 'x', at };
-      this.pos = { x, z: at + (dir > 0 ? LANE_OFFSET : -LANE_OFFSET) };
+export class CarFleet {
+  constructor(scene, capacity = 72) {
+    this.capacity = capacity;
+    this.cars = [];
+    this.bodies = new THREE.InstancedMesh(bodyGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), capacity);
+    this.cabins = new THREE.InstancedMesh(cabinGeo, new THREE.MeshBasicMaterial({ color: 0x14161d }), capacity);
+    this.wheels = new THREE.InstancedMesh(wheelGeo, new THREE.MeshBasicMaterial({ color: 0x0c0d10 }), capacity * 4);
+    this.lights = new THREE.InstancedMesh(lightGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), capacity * 4);
+    this.barsRed = new THREE.InstancedMesh(barGeo, new THREE.MeshBasicMaterial({ color: 0xff2e3c }), 8);
+    this.barsBlue = new THREE.InstancedMesh(barGeo, new THREE.MeshBasicMaterial({ color: 0x2e7dff }), 8);
+    for (const mesh of [this.bodies, this.cabins, this.wheels, this.lights, this.barsRed, this.barsBlue]) {
+      mesh.frustumCulled = false;
+      scene.add(mesh);
     }
-    this.heading = this.road.axis === 'z' ? (this.dir > 0 ? 0 : Math.PI) : this.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
-    this.target = null;
-    this.pickTarget(rng);
-    this.syncMesh();
-  }
-
-  /** The next intersection point ahead, in this car's lane on the cross road. */
-  pickTarget(rng) {
-    const cross = this.road.axis === 'z' ? STREETS : AVENUES;
-    const along = this.road.axis === 'z' ? this.pos.z : this.pos.x;
-    const ahead = cross.filter((c) => (c - along) * this.dir > 8);
-    const next = ahead.length ? ahead.reduce((a, b) => (Math.abs(b - along) < Math.abs(a - along) ? b : a)) : null;
-    if (next === null) {
-      // End of the road: aim past the edge; update() will U-turn there.
-      const end = this.road.axis === 'z' ? (this.dir > 0 ? CITY.maxZ - 6 : CITY.minZ + 6) : this.dir > 0 ? CITY.maxX - 6 : CITY.minX + 6;
-      this.target = this.road.axis === 'z' ? { x: this.pos.x, z: end } : { x: end, z: this.pos.z };
-      this.targetIsEnd = true;
-      return;
-    }
-    this.targetIsEnd = false;
-    // At the intersection we may turn: aim at the lane point just past it.
-    const turn = rng.chance(0.45);
-    if (turn) {
-      const newDir = rng.chance(0.5) ? 1 : -1;
-      if (this.road.axis === 'z') {
-        this.pendingRoad = { axis: 'x', at: next };
-        this.pendingDir = newDir;
-        this.target = { x: this.road.at + (this.dir > 0 ? -LANE_OFFSET : LANE_OFFSET), z: next + (newDir > 0 ? LANE_OFFSET : -LANE_OFFSET) };
-      } else {
-        this.pendingRoad = { axis: 'z', at: next };
-        this.pendingDir = newDir;
-        this.target = { x: next + (newDir > 0 ? -LANE_OFFSET : LANE_OFFSET), z: this.road.at + (this.dir > 0 ? LANE_OFFSET : -LANE_OFFSET) };
+    this.barPhase = 0;
+    // Park every slot far underground until it is claimed.
+    for (let i = 0; i < capacity; i++) {
+      writeInstance(this.bodies, i, 0, -60, 0, 0);
+      writeInstance(this.cabins, i, 0, -60, 0, 0);
+      this.bodies.setColorAt(i, _c.setHex(0x333333));
+      for (let w = 0; w < 4; w++) {
+        writeInstance(this.wheels, i * 4 + w, 0, -60, 0, 0);
+        this.lights.setColorAt(i * 4 + w, _c.setHex(0x000000));
+        writeInstance(this.lights, i * 4 + w, 0, -60, 0, 0);
       }
-    } else {
-      this.pendingRoad = null;
-      this.target =
-        this.road.axis === 'z'
-          ? { x: this.road.at + (this.dir > 0 ? -LANE_OFFSET : LANE_OFFSET), z: next + this.dir * 14 }
-          : { x: next + this.dir * 14, z: this.road.at + (this.dir > 0 ? LANE_OFFSET : -LANE_OFFSET) };
     }
   }
 
-  update(dt, rng, blockers) {
-    // Brake for anything solid ahead.
-    const fwd = forwardOf(this.heading);
-    let wanted = this.cruise;
-    for (const b of blockers) {
-      const dx = b.x - this.pos.x;
-      const dz = b.z - this.pos.z;
-      const ahead = dx * fwd.x + dz * fwd.z;
-      const side = Math.abs(dx * fwd.z - dz * fwd.x);
-      if (ahead > 0 && ahead < 8 && side < 1.7) wanted = Math.min(wanted, Math.max(0, (ahead - 4.5) * 1.6));
+  /** Claim a slot and put a car on the street. Returns the car record. */
+  addCar({ x, z, heading = 0, color = 0x888888, kind = "sedan" }) {
+    const slot = this.cars.length;
+    if (slot >= this.capacity) return null;
+    const car = {
+      slot, x, z, heading, speed: 0, kind, color,
+      wheelSpin: 0, driver: null, parked: false, dead: false,
+      // traffic state (filled by Traffic for its own cars)
+      traffic: null,
+    };
+    this.cars.push(car);
+    this.bodies.setColorAt(slot, _c.setHex(color));
+    if (this.bodies.instanceColor) this.bodies.instanceColor.needsUpdate = true;
+    // Headlights warm white, taillights red.
+    this.lights.setColorAt(slot * 4 + 0, _c.setHex(0xffe9b0));
+    this.lights.setColorAt(slot * 4 + 1, _c.setHex(0xffe9b0));
+    this.lights.setColorAt(slot * 4 + 2, _c.setHex(0xff2e3c));
+    this.lights.setColorAt(slot * 4 + 3, _c.setHex(0xff2e3c));
+    if (this.lights.instanceColor) this.lights.instanceColor.needsUpdate = true;
+    return car;
+  }
+
+  /** Send a car back underground and out of the game. */
+  removeCar(car) {
+    car.dead = true;
+    car.x = 0; car.z = 0;
+    writeInstance(this.bodies, car.slot, 0, -60, 0, 0);
+    writeInstance(this.cabins, car.slot, 0, -60, 0, 0);
+    for (let w = 0; w < 4; w++) {
+      writeInstance(this.wheels, car.slot * 4 + w, 0, -60, 0, 0);
+      writeInstance(this.lights, car.slot * 4 + w, 0, -60, 0, 0);
     }
-    const accel = wanted > this.speed ? 5 : 14;
-    this.speed += clamp(wanted - this.speed, -accel * dt, accel * dt);
+  }
 
-    const toTarget = { x: this.target.x - this.pos.x, z: this.target.z - this.pos.z };
-    const dist = Math.hypot(toTarget.x, toTarget.z);
-    const desired = Math.atan2(toTarget.x, toTarget.z);
-    const turnRate = this.speed > 1 ? clamp(2.4 - this.speed * 0.09, 0.9, 2.2) : 2.2;
-    this.heading = turnToward(this.heading, desired, turnRate * dt);
-    const nf = forwardOf(this.heading);
-    this.pos.x += nf.x * this.speed * dt;
-    this.pos.z += nf.z * this.speed * dt;
-
-    if (dist < 5) {
-      if (this.targetIsEnd) {
-        // U-turn: swap direction and lane on the same road.
-        this.dir = -this.dir;
-        if (this.road.axis === 'z') this.pos.x = this.road.at + (this.dir > 0 ? -LANE_OFFSET : LANE_OFFSET);
-        else this.pos.z = this.road.at + (this.dir > 0 ? LANE_OFFSET : -LANE_OFFSET);
-      } else if (this.pendingRoad) {
-        this.road = this.pendingRoad;
-        this.dir = this.pendingDir;
-        this.pendingRoad = null;
+  /** Re-write every instance matrix from the car records. */
+  update(dt) {
+    this.barPhase += dt;
+    const flash = Math.floor(this.barPhase * 2.6) % 2 === 0;
+    let barSlot = 0;
+    for (const car of this.cars) {
+      if (car.dead) continue;
+      const i = car.slot;
+      const sin = Math.sin(car.heading), cos = Math.cos(car.heading);
+      car.wheelSpin += (car.speed * dt) / 0.37;
+      writeInstance(this.bodies, i, car.x, 0.55, car.z, car.heading);
+      writeInstance(this.cabins, i, car.x - sin * 0.25, 1.12, car.z - cos * 0.25, car.heading);
+      const wheelLocal = [[-0.82, 1.35], [0.82, 1.35], [-0.82, -1.35], [0.82, -1.35]];
+      wheelLocal.forEach(([lx, lz], w) => {
+        const wx = car.x + lx * cos + lz * sin;
+        const wz = car.z - lx * sin + lz * cos;
+        writeInstance(this.wheels, i * 4 + w, wx, 0.37, wz, car.heading, 0);
+        // Headlights sit at the front corners, taillights at the rear.
+        const isFront = lz > 0;
+        const ox = isFront ? lx * 0.82 : lx * 0.82;
+        const oz = isFront ? 2.19 : -2.19;
+        const hx = car.x + ox * cos + oz * sin;
+        const hz = car.z - ox * sin + oz * cos;
+        writeInstance(this.lights, i * 4 + w, hx, 0.62, hz, car.heading);
+      });
+      if (car.kind === "police" && barSlot < 8) {
+        const bx = car.x - sin * 0.25, bz = car.z - cos * 0.25;
+        // Alternate the red and blue halves by hiding one underground.
+        writeInstance(this.barsRed, barSlot, bx - cos * 0.34, flash ? 1.5 : -60, bz + sin * 0.34, car.heading);
+        writeInstance(this.barsBlue, barSlot, bx + cos * 0.34, flash ? -60 : 1.5, bz - sin * 0.34, car.heading);
+        barSlot++;
       }
-      this.pickTarget(rng);
     }
-    this.syncMesh();
-  }
-
-  syncMesh() {
-    this.mesh.position.set(this.pos.x, 0, this.pos.z);
-    this.mesh.rotation.y = this.heading;
+    for (; barSlot < 8; barSlot++) {
+      writeInstance(this.barsRed, barSlot, 0, -60, 0, 0);
+      writeInstance(this.barsBlue, barSlot, 0, -60, 0, 0);
+    }
+    for (const mesh of [this.bodies, this.cabins, this.wheels, this.lights, this.barsRed, this.barsBlue]) {
+      mesh.instanceMatrix.needsUpdate = true;
+    }
   }
 }
 
-/** All the ambient traffic. Cars far from the player recycle to roads near them. */
+// ---------------------------------------------------------------------------
+// Traffic: cars that drive the grid on their own, right-hand lanes, turning
+// at intersections, slowing for the car ahead.
+// ---------------------------------------------------------------------------
+
+const ALL_ROADS_X = [...AVENUES_X, OCEAN_DRIVE_X];
+
 export class Traffic {
-  constructor(scene, rng, count = 12) {
+  constructor(fleet, rng) {
+    this.fleet = fleet;
     this.rng = rng;
     this.cars = [];
-    for (let i = 0; i < count; i += 1) this.cars.push(new TrafficCar(scene, rng));
   }
 
-  /** Dynamic blockers (player, police) are passed in; traffic adds its own cars'. */
-  update(dt, playerPos, extraBlockers) {
-    const blockers = [...extraBlockers];
-    for (const car of this.cars) blockers.push({ x: car.pos.x, z: car.pos.z });
-    for (const car of this.cars) {
-      car.update(dt, this.rng, blockers.filter((b) => b.x !== car.pos.x || b.z !== car.pos.z));
-      if (playerPos && groundDistance(car.pos, playerPos) > 320) car.place(this.rng, playerPos);
+  spawnOne() {
+    const rng = this.rng;
+    const onAvenue = rng() < 0.55;
+    const car = this.fleet.addCar({
+      x: 0, z: 0,
+      color: rng() < 0.14 ? 0xf2c230 : CAR_COLORS[Math.floor(rng() * CAR_COLORS.length)],
+      kind: rng() < 0.14 ? "taxi" : "sedan",
+    });
+    if (!car) return null;
+    const t = {
+      axis: onAvenue ? "NS" : "EW",
+      line: onAvenue ? ALL_ROADS_X[Math.floor(rng() * ALL_ROADS_X.length)] : STREETS_Z[Math.floor(rng() * STREETS_Z.length)],
+      dir: rng() < 0.5 ? 1 : -1,
+      along: -150 + rng() * 300,
+      speed: 0,
+      cruise: 8 + rng() * 4.5,
+    };
+    car.traffic = t;
+    this.place(car);
+    this.cars.push(car);
+    return car;
+  }
+
+  /** Lane offset for right-hand traffic, and the world position of a car. */
+  place(car) {
+    const t = car.traffic;
+    const off = 3; // right-hand lane, metres from the centre line
+    if (t.axis === "NS") {
+      car.x = t.line + (t.dir > 0 ? -off : off);
+      car.z = t.along;
+      car.heading = t.dir > 0 ? 0 : Math.PI;
+    } else {
+      car.x = t.along;
+      car.z = t.line + (t.dir > 0 ? off : -off);
+      car.heading = t.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
     }
   }
 
-  /** Positions for collision and minimap. */
-  positions() {
-    return this.cars.map((car) => ({ x: car.pos.x, z: car.pos.z, heading: car.heading }));
+  /** The crossing roads ahead of a traffic car, for turn decisions. */
+  crossings(t) {
+    return t.axis === "NS" ? STREETS_Z : ALL_ROADS_X;
   }
+
+  update(dt, obstacles) {
+    const rng = this.rng;
+    for (const car of this.cars) {
+      if (car.dead || car.driver === "player") continue;
+      const t = car.traffic;
+      // Slow for anything ahead in the lane.
+      let target = t.cruise;
+      for (const o of obstacles) {
+        if (o === car) continue;
+        const dx = o.x - car.x, dz = o.z - car.z;
+        const fx = Math.sin(car.heading), fz = Math.cos(car.heading);
+        const ahead = dx * fx + dz * fz;
+        const side = Math.abs(dx * fz - dz * fx);
+        if (ahead > 0 && ahead < 10 && side < 2.2) target = Math.min(target, Math.max(0, (ahead - 5) * 1.4));
+      }
+      t.speed += Math.max(-14 * dt, Math.min(7 * dt, target - t.speed));
+      car.speed = t.speed;
+      t.along += t.dir * t.speed * dt;
+      // Wrap at the city edge: leave one end, re-enter at the other.
+      const limit = t.axis === "NS" ? 168 : 205;
+      if (t.along > limit) t.along = -limit;
+      if (t.along < -limit) t.along = limit;
+      // Turn at intersections, sometimes.
+      for (const cross of this.crossings(t)) {
+        if (Math.abs(t.along - cross) < 1.1 && Math.abs(t.speed) > 2 && rng() < 0.006) {
+          const oldLine = t.line;
+          t.axis = t.axis === "NS" ? "EW" : "NS";
+          t.line = cross;
+          t.along = oldLine;
+          t.dir = rng() < 0.5 ? 1 : -1;
+          break;
+        }
+      }
+      this.place(car);
+    }
+  }
+}
+
+/** Parked cars along the curbs: colour and life for the still streets. */
+export function parkCars(fleet, rng) {
+  const parked = [];
+  const spots = [];
+  for (let z = -140; z <= 140; z += 15) {
+    if (rng() < 0.45) spots.push({ x: OCEAN_DRIVE_X - ROAD_HALF - 1.6, z: z + rng() * 5, heading: 0 });
+    if (rng() < 0.35) spots.push({ x: OCEAN_DRIVE_X + ROAD_HALF + 1.6, z: z + 7, heading: Math.PI });
+  }
+  for (const sz of STREETS_Z) {
+    for (let x = -160; x <= 100; x += 26) {
+      if (rng() < 0.3) spots.push({ x: x + rng() * 6, z: sz - ROAD_HALF - 1.6, heading: Math.PI / 2 });
+    }
+  }
+  // A small parking row inside the impound and the dockyard.
+  for (let i = 0; i < 4; i++) spots.push({ x: -170 + i * 9, z: -124, heading: 0.2 });
+  for (let i = 0; i < 3; i++) spots.push({ x: -196 + i * 10, z: 146, heading: -0.3 });
+  for (const s of spots) {
+    const car = fleet.addCar({
+      x: s.x, z: s.z, heading: s.heading,
+      color: CAR_COLORS[Math.floor(rng() * CAR_COLORS.length)],
+      kind: "sedan",
+    });
+    if (car) {
+      car.parked = true;
+      parked.push(car);
+    }
+  }
+  return parked;
 }

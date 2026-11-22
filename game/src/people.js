@@ -1,196 +1,180 @@
-// people.js — the humans. The player's figure (Nico Vega, teal jacket) with a
-// swinging walk cycle, and the pedestrians of Port Meridian: residents who
-// stroll the sidewalk ring of their block, dive away from fast cars, and go
-// down when clipped — each outcome the wanted rules hear about from game.js.
+// people.js — the crowds of Port Meridian.
+//
+// Pedestrians are two InstancedMeshes (capsule bodies, sphere heads) with a
+// per-instance splash of shirt colour. They stroll the sidewalks in both
+// directions, hurry away from fast cars, and go down when shoved or clipped
+// — then get up and run. All state lives in plain records; the crowd
+// re-writes its matrices each frame.
 
-import * as THREE from 'three';
-import { BLOCKS, BLOCK_SIZE } from './cityplan.js';
-import { groundDistance } from './rng.js';
+import * as THREE from "three";
+import { AVENUES_X, OCEAN_DRIVE_X, STREETS_Z, ROAD_HALF } from "./logic.js";
 
-const SKIN = [0xe8b88a, 0xc68863, 0x8a5a3b, 0xf0c8a0, 0x6e4525];
-const SHIRTS = [0xd94f70, 0x3f8fd2, 0xf2e3c9, 0x39b56e, 0x8a63d2, 0xe07b2a, 0xdadada, 0x274156];
+const SHIRTS = [0xff5da2, 0x22d3ee, 0xffa726, 0x8aff5a, 0xe8e2d2, 0xc77dff, 0xff5252, 0x7fe7ff, 0xd8b4c2, 0x9fb4cc];
+const SKIN = [0xf2c09a, 0xc68863, 0x8a5a3b, 0x6e4530, 0xffd9b3];
 
-function limb(w, h, d, color) {
-  const geo = new THREE.BoxGeometry(w, h, d);
-  geo.translate(0, -h / 2, 0);
-  return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color }));
-}
+const bodyGeo = new THREE.CapsuleGeometry(0.30, 0.78, 3, 8);
+const headGeo = new THREE.SphereGeometry(0.21, 8, 8);
 
-/** Nico's figure: articulated arms and legs the walk cycle swings. */
-export class PlayerFigure {
-  constructor(scene) {
-    const group = new THREE.Group();
-    const jacket = 0x0f766e;
-    const denim = 0x24304a;
-    this.legL = limb(0.15, 0.55, 0.17, denim);
-    this.legL.position.set(-0.1, 0.56, 0);
-    this.legR = limb(0.15, 0.55, 0.17, denim);
-    this.legR.position.set(0.1, 0.56, 0);
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.62, 0.25), new THREE.MeshLambertMaterial({ color: jacket }));
-    torso.position.y = 0.88;
-    this.armL = limb(0.11, 0.52, 0.13, jacket);
-    this.armL.position.set(-0.3, 1.14, 0);
-    this.armR = limb(0.11, 0.52, 0.13, jacket);
-    this.armR.position.set(0.3, 1.14, 0);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.145, 10, 8), new THREE.MeshLambertMaterial({ color: 0xc68863 }));
-    head.position.y = 1.36;
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.09, 0.3), new THREE.MeshLambertMaterial({ color: 0x11131a }));
-    cap.position.y = 1.49;
-    group.add(this.legL, this.legR, torso, this.armL, this.armR, head, cap);
-    this.group = group;
-    this.phase = 0;
-    scene.add(group);
-  }
+const _m = new THREE.Matrix4();
+const _q = new THREE.Quaternion();
+const _e = new THREE.Euler();
+const _p = new THREE.Vector3();
+const _s = new THREE.Vector3(1, 1, 1);
+const _c = new THREE.Color();
 
-  /** speed in m/s; the stride follows it, and settles to a sway at rest. */
-  update(dt, speed) {
-    this.phase += dt * (2.2 + speed * 1.55);
-    const swing = Math.min(0.75, speed * 0.16);
-    this.legL.rotation.x = Math.sin(this.phase) * swing;
-    this.legR.rotation.x = -Math.sin(this.phase) * swing;
-    this.armL.rotation.x = -Math.sin(this.phase) * swing * 0.8;
-    this.armR.rotation.x = Math.sin(this.phase) * swing * 0.8;
-    this.group.position.y = Math.abs(Math.sin(this.phase)) * 0.045 * Math.min(1, speed);
-  }
+const SIDEWALK = ROAD_HALF + 1.7;
 
-  /** A one-shot shove pose (the arm swings out); game.js times the recovery. */
-  shovePose() {
-    this.armR.rotation.x = -1.5;
-  }
-}
-
-class Pedestrian {
-  constructor(scene, rng) {
-    const block = rng.pick(BLOCKS);
-    this.block = block;
-    this.half = BLOCK_SIZE / 2 + 3.2;
-    this.s = rng.range(0, this.perimeter());
-    this.speed = rng.range(0.85, 1.35);
-    this.state = 'walk';
-    this.stateTime = 0;
-    this.fleeFrom = null;
-    const group = new THREE.Group();
-    const body = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.17, 0.62, 3, 8),
-      new THREE.MeshLambertMaterial({ color: rng.pick(SHIRTS) }),
-    );
-    body.position.y = 0.82;
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.115, 8, 7), new THREE.MeshLambertMaterial({ color: rng.pick(SKIN) }));
-    head.position.y = 1.42;
-    group.add(body, head);
-    this.group = group;
-    scene.add(group);
-    this.pos = { x: block.cx, z: block.cz };
-    this.heading = 0;
-    this.placeOnPath();
-  }
-
-  perimeter() {
-    return this.half * 8;
-  }
-
-  /** Position and heading at path distance s around the block's sidewalk ring. */
-  placeOnPath() {
-    const h = this.half;
-    const side = Math.floor(this.s / (h * 2)) % 4;
-    const t = this.s - side * h * 2 - h; // -h..h along the side
-    const { cx, cz } = this.block;
-    if (side === 0) {
-      this.pos = { x: cx + t, z: cz - h };
-      this.heading = Math.PI / 2;
-    } else if (side === 1) {
-      this.pos = { x: cx + h, z: cz + t };
-      this.heading = 0;
-    } else if (side === 2) {
-      this.pos = { x: cx - t, z: cz + h };
-      this.heading = -Math.PI / 2;
-    } else {
-      this.pos = { x: cx - h, z: cz - t };
-      this.heading = Math.PI;
-    }
-    this.syncMesh(0);
-  }
-
-  syncMesh(bob) {
-    this.group.position.set(this.pos.x, this.state === 'down' ? 0.25 : bob, this.pos.z);
-    this.group.rotation.y = this.heading;
-    this.group.rotation.x = this.state === 'down' ? -Math.PI / 2 : 0;
-  }
-
-  update(dt) {
-    this.stateTime += dt;
-    if (this.state === 'down') {
-      if (this.stateTime > 4.5) {
-        this.state = 'walk';
-        this.stateTime = 0;
-      }
-      this.syncMesh(0);
-      return;
-    }
-    if (this.state === 'flee' && this.fleeFrom) {
-      const away = Math.atan2(this.pos.x - this.fleeFrom.x, this.pos.z - this.fleeFrom.z);
-      this.heading = away;
-      this.pos.x += Math.sin(away) * 3.4 * dt;
-      this.pos.z += Math.cos(away) * 3.4 * dt;
-      if (this.stateTime > 2.6) {
-        this.state = 'walk';
-        this.stateTime = 0;
-        // Rejoin the ring at the nearest point: nudge s by snapping to the block edge.
-        const dx = this.pos.x - this.block.cx;
-        const dz = this.pos.z - this.block.cz;
-        if (Math.abs(dx) > Math.abs(dz)) this.pos.x = this.block.cx + Math.sign(dx) * this.half;
-        else this.pos.z = this.block.cz + Math.sign(dz) * this.half;
-      }
-      this.syncMesh(Math.abs(Math.sin(this.stateTime * 10)) * 0.05);
-      return;
-    }
-    this.s = (this.s + this.speed * dt) % this.perimeter();
-    this.placeOnPath();
-    this.syncMesh(Math.abs(Math.sin(this.s * 2.4)) * 0.035);
-  }
-
-  knockDown() {
-    if (this.state === 'down') return false;
-    this.state = 'down';
-    this.stateTime = 0;
-    return true;
-  }
-
-  flee(from) {
-    if (this.state === 'down') return;
-    this.state = 'flee';
-    this.stateTime = 0;
-    this.fleeFrom = from;
-  }
-}
-
-export class Pedestrians {
-  constructor(scene, rng, count = 18) {
+export class Crowd {
+  constructor(scene, rng, count = 64) {
+    this.rng = rng;
     this.peds = [];
-    for (let i = 0; i < count; i += 1) this.peds.push(new Pedestrian(scene, rng));
-  }
-
-  update(dt) {
-    for (const ped of this.peds) ped.update(dt);
-  }
-
-  /** Knock down everyone within radius of pos; returns how many fell (for heat). */
-  knockAt(pos, radius) {
-    let fell = 0;
-    for (const ped of this.peds) {
-      if (groundDistance(ped.pos, pos) <= radius && ped.knockDown()) fell += 1;
+    this.bodies = new THREE.InstancedMesh(bodyGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), count);
+    this.heads = new THREE.InstancedMesh(headGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), count);
+    this.bodies.frustumCulled = false;
+    this.heads.frustumCulled = false;
+    scene.add(this.bodies, this.heads);
+    for (let i = 0; i < count; i++) {
+      const ped = this.spawn();
+      if (!ped) break;
+      ped.slot = i;
+      this.peds.push(ped);
+      this.bodies.setColorAt(i, _c.setHex(ped.shirt));
+      this.heads.setColorAt(i, _c.setHex(ped.skin));
     }
-    return fell;
+    if (this.bodies.instanceColor) this.bodies.instanceColor.needsUpdate = true;
+    if (this.heads.instanceColor) this.heads.instanceColor.needsUpdate = true;
   }
 
-  /** Everyone near pos who can run, runs. */
-  scareAt(pos, radius) {
-    for (const ped of this.peds) {
-      if (groundDistance(ped.pos, pos) <= radius) ped.flee(pos);
+  spawn() {
+    const rng = this.rng;
+    const onAvenue = rng() < 0.5;
+    const roadsX = [...AVENUES_X, OCEAN_DRIVE_X];
+    const axis = onAvenue ? "NS" : "EW";
+    const line = onAvenue ? roadsX[Math.floor(rng() * roadsX.length)] : STREETS_Z[Math.floor(rng() * STREETS_Z.length)];
+    const side = rng() < 0.5 ? -SIDEWALK : SIDEWALK;
+    return {
+      slot: 0, axis, line, side,
+      dir: rng() < 0.5 ? 1 : -1,
+      along: -145 + rng() * 290,
+      speed: 1.1 + rng() * 0.8,
+      shirt: SHIRTS[Math.floor(rng() * SHIRTS.length)],
+      skin: SKIN[Math.floor(rng() * SKIN.length)],
+      bob: rng() * Math.PI * 2,
+      state: "walk", // walk | flee | down
+      timer: 0,
+      x: 0, z: 0, heading: 0,
+      fleeX: 0, fleeZ: 0,
+    };
+  }
+
+  place(ped) {
+    if (ped.axis === "NS") {
+      ped.x = ped.line + ped.side;
+      ped.z = ped.along;
+      ped.heading = ped.dir > 0 ? 0 : Math.PI;
+    } else {
+      ped.x = ped.along;
+      ped.z = ped.line + ped.side;
+      ped.heading = ped.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
     }
   }
 
-  positions() {
-    return this.peds.map((ped) => ({ x: ped.pos.x, z: ped.pos.z, down: ped.state === 'down' }));
+  /** Knock a pedestrian down (shove or car contact). */
+  knockDown(ped, onCrime) {
+    if (ped.state === "down") return;
+    ped.state = "down";
+    ped.timer = 2.6 + this.rng() * 1.6;
+    if (onCrime) onCrime(ped);
+  }
+
+  nearest(x, z, maxDist) {
+    let best = null, bestD = maxDist;
+    for (const ped of this.peds) {
+      const d = Math.hypot(ped.x - x, ped.z - z);
+      if (d < bestD) { bestD = d; best = ped; }
+    }
+    return best;
+  }
+
+  update(dt, ctx) {
+    const rng = this.rng;
+    for (const ped of this.peds) {
+      if (ped.state === "down") {
+        ped.timer -= dt;
+        if (ped.timer <= 0) {
+          ped.state = "flee";
+          ped.timer = 2.2;
+          ped.fleeX = ped.x - ctx.playerX;
+          ped.fleeZ = ped.z - ctx.playerZ;
+          const len = Math.hypot(ped.fleeX, ped.fleeZ) || 1;
+          ped.fleeX /= len; ped.fleeZ /= len;
+        }
+      } else if (ped.state === "flee") {
+        ped.timer -= dt;
+        ped.x += ped.fleeX * 4.4 * dt;
+        ped.z += ped.fleeZ * 4.4 * dt;
+        ped.heading = Math.atan2(ped.fleeX, ped.fleeZ);
+        ped.bob += dt * 13;
+        if (ped.timer <= 0) {
+          // Rejoin the nearest sidewalk flow.
+          ped.state = "walk";
+          const near = this.nearestFlow(ped.x, ped.z);
+          Object.assign(ped, near);
+        }
+      } else {
+        // Walk the sidewalk; scatter from a fast-approaching car.
+        const dx = ped.x - ctx.playerX, dz = ped.z - ctx.playerZ;
+        const dist = Math.hypot(dx, dz);
+        if (ctx.playerSpeed > 7 && dist < 6.5) {
+          ped.state = "flee";
+          ped.timer = 1.6;
+          ped.fleeX = dx / (dist || 1);
+          ped.fleeZ = dz / (dist || 1);
+        } else {
+          ped.along += ped.dir * ped.speed * dt;
+          ped.bob += dt * (4.4 + ped.speed);
+          const limit = 152;
+          if (ped.along > limit || ped.along < -limit) {
+            ped.dir *= -1;
+            ped.along = Math.max(-limit, Math.min(limit, ped.along));
+            if (rng() < 0.4) ped.side = -ped.side;
+          }
+          this.place(ped);
+        }
+      }
+      // Write the instance.
+      const down = ped.state === "down";
+      const bobY = down ? 0 : Math.abs(Math.sin(ped.bob)) * 0.07;
+      _e.set(down ? Math.PI / 2 : 0, ped.heading, 0);
+      _q.setFromEuler(_e);
+      _p.set(ped.x, (down ? 0.32 : 0.86) + bobY, ped.z);
+      _s.set(1, 1, 1);
+      _m.compose(_p, _q, _s);
+      this.bodies.setMatrixAt(ped.slot, _m);
+      _e.set(0, ped.heading, 0);
+      _q.setFromEuler(_e);
+      _p.set(ped.x, down ? 0.36 : 1.62 + bobY, ped.z);
+      _m.compose(_p, _q, _s);
+      this.heads.setMatrixAt(ped.slot, _m);
+    }
+    this.bodies.instanceMatrix.needsUpdate = true;
+    this.heads.instanceMatrix.needsUpdate = true;
+  }
+
+  /** The nearest sidewalk flow line to a point, for peds rejoining a walk. */
+  nearestFlow(x, z) {
+    const rng = this.rng;
+    let best = null, bestD = Infinity;
+    for (const ax of [...AVENUES_X, OCEAN_DRIVE_X]) {
+      const d = Math.abs(x - ax);
+      if (d < bestD) { bestD = d; best = { axis: "NS", line: ax, along: z }; }
+    }
+    for (const sz of STREETS_Z) {
+      const d = Math.abs(z - sz);
+      if (d < bestD) { bestD = d; best = { axis: "EW", line: sz, along: x }; }
+    }
+    best.side = (best.axis === "NS" ? (x > best.line ? SIDEWALK : -SIDEWALK) : (z > best.line ? SIDEWALK : -SIDEWALK));
+    best.dir = rng() < 0.5 ? 1 : -1;
+    return best;
   }
 }

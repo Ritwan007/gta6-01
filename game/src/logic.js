@@ -1,308 +1,335 @@
-// logic.js — the pure rules of LEONIDA AFTER DARK.
+// logic.js — the rules of LEONIDA AFTER DARK, with no browser in them.
 //
-// Nothing in this file touches the DOM, three.js or the clock: it is the
-// city's map data, the story's mission table, the economy, the wanted
-// rules and the save format, written so the Node test suite can hold every
-// rule to account without opening a browser.
+// The map grid, the money, the mission table, the wanted rules and the
+// save format live here as pure data and pure functions, so the headless
+// suite in tests/ can hold every one of them to account. Anything that
+// touches the DOM, the renderer or the clock belongs to another module.
+
+export const SAVE_KEY = "leonida-after-dark/save/v1";
 
 // ---------------------------------------------------------------------------
-// The map of Port Meridian. Avenues run north-south (constant x), streets
-// run east-west (constant z). Blocks sit between them; the beach, the
-// dockyard and the pier break the grid on purpose.
+// Money. Jax starts the night with bus fare and a five-figure problem; the
+// nine jobs on Marta Venn's books pay more than the debt between them —
+// but only just, and only if he finishes the arc.
 // ---------------------------------------------------------------------------
 
-export const AVENUES_X = [-176, -132, -88, -44, 0, 44, 88];
+export const DEBT = 25000;
+export const START_CASH = 600;
+
+// ---------------------------------------------------------------------------
+// The map of Port Meridian. Five avenues run north–south and eight streets
+// run east–west; Ocean Drive closes the grid along the beach. Everything
+// else in the game — traffic, crowds, the minimap, the world builder —
+// reads the street plan from here, so the map can never disagree with
+// itself.
+// ---------------------------------------------------------------------------
+
+export const AVENUES_X = [-88, -44, 0, 44, 88];
+export const STREETS_Z = [-150, -110, -70, -30, 10, 50, 90, 130];
 export const OCEAN_DRIVE_X = 132;
-export const STREETS_Z = [-110, -66, -22, 22, 66, 110];
-export const ROAD_HALF = 6; // half the width of a road, in metres
-export const BLOCK_PITCH = 44;
+export const ROAD_HALF = 6;
 
-export const BEACH_X = 150; // sand starts here
-export const WATER_X = 180; // open water starts here
-export const PIER_Z = 44;
-export const PIER_END_X = 240;
+export const BEACH_X = 142; // where the promenade gives up and sand begins
+export const WATER_X = 172; // where the sand gives up and the sea begins
+export const PIER_Z = 44;   // the lighthouse pier runs east along this line
 
-export const DOCKYARD = { minX: -232, maxX: -188, minZ: 58, maxZ: 152 };
-export const IMPOUND = { minX: -182, maxX: -96, minZ: -146, maxZ: -118 };
+export const WORLD = { minX: -248, maxX: 248, minZ: -152, maxZ: 164 };
+
+// The two open yards: no street grid, just tarmac, fences and business.
+export const DOCKYARD = { minX: -248, maxX: -128, minZ: 58, maxZ: 152 };
+export const IMPOUND = { minX: -196, maxX: -118, minZ: -152, maxZ: -108 };
 
 export const LANDMARKS = {
-  hotel: { x: 110, z: -44, name: "Palms Royale" },
-  casino: { x: 110, z: 44, name: "Casino Cielo" },
-  loans: { x: -22, z: 0, name: "Venn Loans" },
-  chopShop: { x: -208, z: 128, name: "Salvage & Sons" },
-  lighthouse: { x: PIER_END_X, z: PIER_Z, name: "Meridian Light" },
-  spawn: { x: 124, z: -30, heading: Math.PI },
+  spawn: { x: 125, z: -10, heading: 0 },
+  loans: { x: -14, z: 30 },        // Venn Loans, just west of Avenue 3
+  hotel: { x: 114, z: -50 },       // the Palms Royale, on Ocean Drive
+  casino: { x: 112, z: 30 },       // Casino Cielo, on Ocean Drive
+  docks: { x: -208, z: 108 },      // the dockyard cranes
+  impound: { x: -158, z: -130 },   // the municipal impound
+  lighthouse: { x: 240, z: PIER_Z },
 };
 
-/** Block centres between the avenues (west..east) and streets (north..south). */
-export function blockCenters() {
-  const xs = [];
-  const roadsX = [...AVENUES_X, OCEAN_DRIVE_X];
-  for (let i = 0; i + 1 < roadsX.length; i++) xs.push((roadsX[i] + roadsX[i + 1]) / 2);
-  const zs = [];
-  for (let i = 0; i + 1 < STREETS_Z.length; i++) zs.push((STREETS_Z[i] + STREETS_Z[i + 1]) / 2);
-  const out = [];
-  for (const x of xs) for (const z of zs) out.push({ x, z });
-  return out;
+function inRect(x, z, r) {
+  return x >= r.minX && x <= r.maxX && z >= r.minZ && z <= r.maxZ;
 }
 
-/** Is the point on a road (avenue, street or Ocean Drive)? */
+/** Is this point on tarmac a car is meant to be on? */
 export function isRoad(x, z) {
-  for (const ax of [...AVENUES_X, OCEAN_DRIVE_X]) if (Math.abs(x - ax) <= ROAD_HALF) return true;
+  for (const ax of AVENUES_X) if (Math.abs(x - ax) <= ROAD_HALF) return true;
+  if (Math.abs(x - OCEAN_DRIVE_X) <= ROAD_HALF) return true;
   for (const sz of STREETS_Z) if (Math.abs(z - sz) <= ROAD_HALF) return true;
-  // The pier is drivable decking.
-  if (x >= WATER_X && x <= PIER_END_X + 6 && Math.abs(z - PIER_Z) <= 5) return true;
+  // The pier deck: a drivable boardwalk over the water to the lighthouse.
+  if (x >= BEACH_X - 4 && x <= WORLD.maxX && Math.abs(z - PIER_Z) <= 7) return true;
   return false;
 }
 
-/** Is the point inside the dockyard or the impound lot (open yards, no blocks)? */
+/** Is this point inside one of the open yards (dockyard or impound)? */
 export function isYard(x, z) {
-  const inRect = (r) => x >= r.minX && x <= r.maxX && z >= r.minZ && z <= r.maxZ;
-  return inRect(DOCKYARD) || inRect(IMPOUND);
+  return inRect(x, z, DOCKYARD) || inRect(x, z, IMPOUND);
 }
 
-/** Clamp a world position to the playable ground. */
+/** Is this point out on the water, east of the sand line? */
+export function isWater(x, z) {
+  return x > WATER_X && !isRoad(x, z);
+}
+
+/** The centre of every city block the grid cuts out — 5 across, 7 deep. */
+export function blockCenters() {
+  const roadsX = [...AVENUES_X, OCEAN_DRIVE_X];
+  const out = [];
+  for (let i = 0; i + 1 < roadsX.length; i++) {
+    for (let j = 0; j + 1 < STREETS_Z.length; j++) {
+      out.push({
+        x: (roadsX[i] + roadsX[i + 1]) / 2,
+        z: (STREETS_Z[j] + STREETS_Z[j + 1]) / 2,
+      });
+    }
+  }
+  return out;
+}
+
+/** Keep a point inside the playable world, sea walls and all. */
 export function clampToWorld(p) {
-  p.x = Math.max(-238, Math.min(248, p.x));
-  p.z = Math.max(-152, Math.min(158, p.z));
-  return p;
+  return {
+    x: Math.max(WORLD.minX, Math.min(WORLD.maxX, p.x)),
+    z: Math.max(WORLD.minZ, Math.min(WORLD.maxZ, p.z)),
+  };
 }
 
 // ---------------------------------------------------------------------------
-// The story. Jax Marlowe owes Venn Loans DEBT dollars. Nine missions, worked
-// in order from glowing markers, pay more than the debt between them.
+// The mission table: nine jobs between Jax and a clean ledger. Points are
+// driven in order; points[0] is where the offer light burns. Rewards sum
+// to $31,600 against the $25,000 debt.
 // ---------------------------------------------------------------------------
-
-export const DEBT = 25_000;
-export const START_CASH = 120;
 
 export const MISSIONS = [
   {
     id: "first-fare",
-    title: "First Fare",
-    giver: "Desk clerk, Palms Royale",
     kind: "fare",
-    reward: 1600,
-    brief: "A guest at the Palms Royale needs a ride to Casino Cielo. Pick her up at the hotel doors, drop her at the casino steps.",
+    title: "First Fare",
+    brief: "A dancer from the Cielo floor needs a ride across town and pays cash. Pick her up on Ocean Drive, drop her at Avenue 4 — no questions, no shortcuts through the flowerbeds.",
+    reward: 1800,
     points: [
-      { x: 131, z: -44, label: "Pick up the guest" },
-      { x: 131, z: 44, label: "Drop her at Casino Cielo" },
+      { x: 132, z: -30, label: "Pick up your fare on Ocean Drive" },
+      { x: 44, z: 10, label: "Drop her at Avenue 4 & 6th" },
     ],
   },
   {
     id: "hot-package",
+    kind: "timed",
     title: "Hot Package",
-    giver: "Dockhand, Pier 9",
-    kind: "timed",
-    reward: 2200,
-    timeLimit: 110,
-    brief: "A crate came off the night boat that nobody signed for. Take it from the dockyard to the condo tower on Ocean Drive — quickly, and don't stop to chat.",
+    brief: "A courier on Avenue 2 is holding a package that gets heavier by the minute — legally speaking. Grab it and get it across town before the clock eats the fee.",
+    reward: 2400,
+    timeLimit: 120,
     points: [
-      { x: -206, z: 96, label: "Collect the crate" },
-      { x: 128, z: -88, label: "Deliver to the condo tower" },
+      { x: -44, z: -70, label: "Collect the package on Avenue 2" },
+      { x: 88, z: 50, label: "Deliver it to Avenue 5 & 8th" },
     ],
   },
   {
-    id: "three-drops",
-    title: "Three Drops",
-    giver: "Vera, by phone",
+    id: "envelope-run",
     kind: "collect",
+    title: "Envelope Run",
+    brief: "Five envelopes, five corners, one nervous bookkeeper who wants them all in hand before he will even talk numbers. Sweep the city and pick up every one.",
     reward: 2600,
-    brief: "Three envelopes, three doorsteps across the city. Collect every envelope and Vera squares a slice of your tab.",
     points: [
-      { x: -48, z: -88, label: "Envelope: north-west block" },
-      { x: 40, z: 88, label: "Envelope: south market" },
-      { x: -136, z: 44, label: "Envelope: west garages" },
+      { x: 0, z: -110, label: "Envelope — Avenue 3 & 2nd" },
+      { x: -88, z: 10, label: "Envelope — Avenue 1 & 6th" },
+      { x: 44, z: -30, label: "Envelope — Avenue 4 & 4th" },
+      { x: 88, z: 90, label: "Envelope — Avenue 5 & 11th" },
+      { x: 0, z: 130, label: "Envelope — Avenue 3 & 13th" },
     ],
   },
   {
-    id: "checkpoint-dash",
-    title: "Checkpoint Dash",
-    giver: "Street racers, underpass",
+    id: "cielo-dash",
     kind: "checkpoints",
-    reward: 3000,
-    timeLimit: 105,
-    brief: "The underpass crew runs a midnight dash: six checkpoints across Port Meridian against the clock. Beat it and the pot is yours.",
+    title: "Cielo Dash",
+    brief: "The Casino Cielo is timing a new courier route and the floor manager bets it cannot be done in one clean run. Prove him wrong — hit every checkpoint in order.",
+    reward: 3200,
+    timeLimit: 180,
     points: [
-      { x: 0, z: -110, label: "Checkpoint 1" },
-      { x: 88, z: -22, label: "Checkpoint 2" },
-      { x: 132, z: 66, label: "Checkpoint 3" },
-      { x: -44, z: 110, label: "Checkpoint 4" },
-      { x: -132, z: 22, label: "Checkpoint 5" },
-      { x: -22, z: -66, label: "Checkpoint 6 — finish" },
+      { x: 132, z: -110, label: "Checkpoint — Ocean Drive & 2nd" },
+      { x: 44, z: -110, label: "Checkpoint — Avenue 4 & 2nd" },
+      { x: 44, z: -30, label: "Checkpoint — Avenue 4 & 4th" },
+      { x: -44, z: -30, label: "Checkpoint — Avenue 2 & 4th" },
+      { x: -44, z: 50, label: "Checkpoint — Avenue 2 & 8th" },
+      { x: 132, z: 50, label: "Checkpoint — Ocean Drive & 8th" },
     ],
   },
   {
-    id: "tail-money",
-    title: "Tail Money",
-    giver: "Vera, by phone",
+    id: "quiet-tail",
     kind: "follow",
+    title: "Quiet Tail",
+    brief: "A grey sedan is moving something for somebody, and Marta wants to know where it sleeps. Stay on its tail — close enough to keep it, far enough to stay a rumour.",
     reward: 3400,
-    brief: "A courier is moving Venn money in a grey sedan. Follow him to the drop — stay close enough to see, far enough not to spook him.",
-    points: [{ x: 44, z: -110, label: "Find the grey sedan" }],
-    follow: { from: { x: 44, z: -110 }, to: { x: -88, z: 66 }, minDist: 11, maxDist: 48 },
-  },
-  {
-    id: "beach-run",
-    title: "Beach Run",
-    giver: "Lifeguard, Ocean Drive",
-    kind: "timed",
-    reward: 3800,
-    timeLimit: 95,
-    brief: "Medicine for the lighthouse keeper, and the fog is coming in. Down Ocean Drive and out the pier — the harbour patrol will take an interest.",
     points: [
-      { x: 132, z: -110, label: "Collect the medicine" },
-      { x: 232, z: 44, label: "Reach the lighthouse" },
+      { x: 0, z: 130, label: "Pick up the courier's tail at Avenue 3 & 13th" },
     ],
-    heatOnStart: 2,
+    follow: { from: { x: 0, z: 130 }, to: { x: -88, z: -70 }, minDist: 9, maxDist: 26 },
   },
   {
-    id: "tow-job",
-    title: "Tow Job",
-    giver: "Sal, Salvage & Sons",
+    id: "red-sportster",
     kind: "steal",
-    reward: 4400,
-    brief: "The city impounded Sal's best coupe. It's sitting in the north impound lot under a floodlight. Take it back and bring it home to the yard.",
-    points: [
-      { x: -140, z: -132, label: "Steal the coupe from the impound" },
-      { x: -208, z: 128, label: "Deliver it to Salvage & Sons" },
-    ],
+    title: "Red Sportster",
+    brief: "A red sportster sits on 11th Street with the keys in it and a very trusting owner. The dockyard chop crew will pay well for it — delivered, not discussed.",
+    reward: 3800,
     heatOnSteal: 2,
-  },
-  {
-    id: "night-fare",
-    title: "Night Fare",
-    giver: "Concierge, Casino Cielo",
-    kind: "fare",
-    reward: 5000,
-    brief: "A high roller at Casino Cielo wants the scenic route to the north marina lookout, and pays like time is nothing. It is not nothing: don't keep him waiting at the kerb.",
     points: [
-      { x: 131, z: 44, label: "Pick up the high roller" },
-      { x: 132, z: -132, label: "Drop him at the marina lookout" },
+      { x: -30, z: 90, label: "Steal the red sportster on 11th Street" },
+      { x: -190, z: 100, label: "Get it to the dockyard chop crew" },
     ],
   },
   {
-    id: "final-ledger",
-    title: "The Final Ledger",
-    giver: "Marta Venn, in person",
-    kind: "escape",
-    reward: 6600,
-    brief: "Marta Venn keeps the original ledger in her valeted car at the Palms Royale. Take the car, shake the heat, and bring it to the lighthouse pier. The debt dies with the ledger.",
+    id: "night-courier",
+    kind: "timed",
+    title: "Night Courier",
+    brief: "One end of Port Meridian to the other, against the clock, with a trunk full of somebody else's urgency. The fee shrinks every second you admire the view.",
+    reward: 4200,
+    timeLimit: 150,
     points: [
-      { x: 131, z: -52, label: "Take the valeted car" },
-      { x: 232, z: 44, label: "Bring it to the lighthouse pier" },
+      { x: 132, z: 130, label: "Collect on Ocean Drive & 13th" },
+      { x: -88, z: -150, label: "Deliver to Avenue 1 & 1st" },
     ],
+  },
+  {
+    id: "impound-special",
+    kind: "steal",
+    title: "Impound Special",
+    brief: "A collector's coupe got towed to the municipal impound and the paperwork is a tragedy. Take it back off the row and lose it where the PD keeps its own secrets.",
+    reward: 4600,
     heatOnSteal: 3,
+    points: [
+      { x: 60, z: -110, label: "Steal the coupe on 2nd Street" },
+      { x: -160, z: -128, label: "Lose it in the impound rows" },
+    ],
+  },
+  {
+    id: "martas-gold",
+    kind: "escape",
+    title: "Marta's Gold",
+    brief: "The last job is personal: Marta Venn's own gold coupe, sitting in the impound under a tarp. Take it, run it to the lighthouse pier, and let the tide take the evidence.",
+    reward: 5600,
+    heatOnSteal: 4,
+    points: [
+      { x: -166, z: -124, label: "Take Marta's gold coupe from the impound" },
+      { x: 210, z: 44, label: "Dump it off the lighthouse pier" },
+    ],
   },
 ];
 
-export function totalRewards(missions = MISSIONS) {
-  return missions.reduce((sum, m) => sum + m.reward, 0);
+export function totalRewards() {
+  return MISSIONS.reduce((sum, m) => sum + m.reward, 0);
 }
 
 export function missionByIndex(i) {
-  return MISSIONS[i] ?? null;
+  return Number.isInteger(i) && i >= 0 && i < MISSIONS.length ? MISSIONS[i] : null;
 }
 
 // ---------------------------------------------------------------------------
-// The wanted rules. Crimes raise the level; time and distance cool it.
+// The wanted rules. Crimes add heat; scripted heat (a mission going loud)
+// sets a floor; an unseen minute sheds stars one at a time.
 // ---------------------------------------------------------------------------
 
 export const MAX_WANTED = 5;
+
+// Heat per crime. Anything not on the list — scripted "mission" noise
+// included — is the mission's own business and moves nothing here.
 export const CRIME_HEAT = {
-  theft: 1, // stealing a car
-  assault: 1, // shoving a pedestrian
-  hitAndRun: 1, // running a pedestrian down
-  policeHit: 1, // ramming a police car
-  mission: 0, // scripted heat is applied by the mission itself
+  theft: 1,
+  assault: 1,
+  vandalism: 1,
+  reckless: 1,
+  hitAndRun: 2,
 };
 
 export function raiseWanted(level, crime) {
-  const add = CRIME_HEAT[crime] ?? 0;
-  return Math.max(0, Math.min(MAX_WANTED, level + add));
+  const heat = CRIME_HEAT[crime] ?? 0;
+  return Math.max(0, Math.min(MAX_WANTED, level + heat));
 }
 
 export function setWantedAtLeast(level, floor) {
   return Math.max(0, Math.min(MAX_WANTED, Math.max(level, floor)));
 }
 
-/** Police the player must expect at a given wanted level. */
-export function policeCountFor(level) {
-  return [0, 1, 2, 3, 4, 5][Math.max(0, Math.min(MAX_WANTED, level))] ?? 0;
+export function policeCountFor(wanted) {
+  return Math.max(0, Math.min(MAX_WANTED, Math.floor(wanted)));
 }
 
-/**
- * Cool the wanted level down. `seconds` of clean time pass; cooling only
- * bites while no police car is close enough to see the player.
- */
-export function coolWanted(level, seconds, policeNear) {
-  if (level <= 0 || policeNear) return level;
-  const steps = Math.floor(seconds / 22);
-  return Math.max(0, level - steps);
+const COOL_SECONDS_PER_STAR = 20;
+
+/** Shed stars for clean, unseen seconds — never while a cruiser watches. */
+export function coolWanted(level, unseenSeconds, seen) {
+  if (seen || level <= 0) return Math.max(0, level);
+  const shed = Math.floor(Math.max(0, unseenSeconds) / COOL_SECONDS_PER_STAR);
+  return Math.max(0, level - shed);
 }
 
-/** What being busted costs: a slice of the cash on hand, never below zero. */
+/** A bust costs a flat booking fee plus a slice of the cash on hand. */
 export function bustFine(cash) {
-  return Math.min(cash, 150 + Math.floor(cash * 0.12));
+  const onHand = Math.max(0, Math.floor(cash));
+  return Math.min(onHand, 150 + Math.floor(onHand * 0.12));
 }
 
 // ---------------------------------------------------------------------------
-// The save. A small plain object in localStorage; serialise/parse are pure
-// so the round trip can be tested headlessly.
+// The save: cash, what's been paid off the ledger, which jobs are done.
+// parseSave trusts nothing — a tampered or rotten save is cleaned, and
+// junk is refused outright.
 // ---------------------------------------------------------------------------
-
-export const SAVE_KEY = "leonida-after-dark-save-v1";
 
 export function createSave() {
-  return {
-    cash: START_CASH,
-    debtPaid: 0,
-    missionsDone: [],
-    startedAt: 0,
-    finished: false,
-  };
+  return { cash: START_CASH, debtPaid: 0, missionsDone: [], finished: false, startedAt: 0 };
 }
 
 export function serializeSave(save) {
   return JSON.stringify({
-    cash: Math.floor(save.cash),
-    debtPaid: Math.floor(save.debtPaid),
+    cash: save.cash,
+    debtPaid: save.debtPaid,
     missionsDone: [...save.missionsDone],
-    startedAt: Math.floor(save.startedAt),
-    finished: !!save.finished,
+    finished: save.finished,
+    startedAt: save.startedAt,
   });
 }
 
-export function parseSave(text) {
-  if (!text) return null;
-  let raw;
+export function parseSave(raw) {
+  if (typeof raw !== "string" || raw.length === 0) return null;
+  let data;
   try {
-    raw = JSON.parse(text);
+    data = JSON.parse(raw);
   } catch {
     return null;
   }
-  if (typeof raw !== "object" || raw === null) return null;
-  const save = createSave();
-  if (Number.isFinite(raw.cash)) save.cash = Math.max(0, Math.floor(raw.cash));
-  if (Number.isFinite(raw.debtPaid)) save.debtPaid = Math.max(0, Math.min(DEBT, Math.floor(raw.debtPaid)));
-  if (Array.isArray(raw.missionsDone)) {
-    const ids = new Set(MISSIONS.map((m) => m.id));
-    save.missionsDone = raw.missionsDone.filter((id) => ids.has(id));
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const known = new Set(MISSIONS.map((m) => m.id));
+  const done = [];
+  if (Array.isArray(data.missionsDone)) {
+    for (const id of data.missionsDone) {
+      if (typeof id === "string" && known.has(id) && !done.includes(id)) done.push(id);
+    }
   }
-  if (Number.isFinite(raw.startedAt)) save.startedAt = Math.floor(raw.startedAt);
-  save.finished = !!raw.finished;
-  return save;
+  const cash = Number(data.cash);
+  const paid = Number(data.debtPaid);
+  const started = Number(data.startedAt);
+  return {
+    cash: Number.isFinite(cash) ? Math.max(0, Math.floor(cash)) : START_CASH,
+    debtPaid: Number.isFinite(paid) ? Math.max(0, Math.min(DEBT, Math.floor(paid))) : 0,
+    missionsDone: done,
+    finished: Boolean(data.finished),
+    startedAt: Number.isFinite(started) ? started : 0,
+  };
 }
 
-/** The next mission the story offers, or null when the arc is complete. */
+/** The next job on the books, or null when the arc is fully worked. */
 export function nextMission(save) {
   return MISSIONS.find((m) => !save.missionsDone.includes(m.id)) ?? null;
 }
 
-/** Record a finished mission and its reward. Returns the new cash total. */
+/** Bank a mission's reward — once, however often the call is replayed. */
 export function completeMission(save, mission) {
-  if (!save.missionsDone.includes(mission.id)) save.missionsDone.push(mission.id);
-  save.cash += mission.reward;
+  if (!mission) return save.cash;
+  if (!save.missionsDone.includes(mission.id)) {
+    save.missionsDone.push(mission.id);
+    save.cash += mission.reward;
+  }
   return save.cash;
 }
 
@@ -310,16 +337,17 @@ export function debtRemaining(save) {
   return Math.max(0, DEBT - save.debtPaid);
 }
 
+/** The ledger can only be closed in full when the cash covers what's left. */
 export function canPayDebt(save) {
-  return save.cash >= debtRemaining(save) && debtRemaining(save) > 0;
+  return debtRemaining(save) > 0 && save.cash >= debtRemaining(save);
 }
 
-/** Pay the debt down as far as the cash reaches. Returns the amount paid. */
+/** Pay what's owed — in full if the cash covers it, else everything there is. */
 export function payDebt(save) {
   const due = debtRemaining(save);
-  const paid = Math.min(due, save.cash);
+  const paid = Math.min(save.cash, due);
   save.cash -= paid;
   save.debtPaid += paid;
-  if (debtRemaining(save) === 0) save.finished = true;
+  if (debtRemaining(save) === 0 && paid > 0) save.finished = true;
   return paid;
 }
